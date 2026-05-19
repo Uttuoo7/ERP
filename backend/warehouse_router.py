@@ -1,0 +1,43 @@
+from typing import List
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+from . import models, schemas, database
+
+router = APIRouter()
+
+@router.get("/", response_model=List[schemas.WarehouseResponse])
+def get_warehouses(db: Session = Depends(database.get_db)):
+    return db.query(models.Warehouse).all()
+
+def seed_warehouses(db: Session):
+    if db.query(models.Warehouse).count() == 0:
+        warehouses = [
+            models.Warehouse(
+                name="Main Mumbai Plant",
+                contact_name="Anand Verma",
+                company_name="Zenith IoT Solutions",
+                address_line1="Unit 401, Alpha Tech Park",
+                address_line2="TTC Industrial Area, Mahape",
+                landmark=None,
+                city="Navi Mumbai",
+                state="Maharashtra",
+                pin_code="400710",
+                phone="9876543210",
+                gstin="27AAAAA0000A1Z5"
+            ),
+            models.Warehouse(
+                name="Bangalore Storage",
+                contact_name="Rajesh Nair",
+                company_name="Zenith IoT Solutions",
+                address_line1="No. 12, Export Promotion Industrial Park",
+                address_line2="Whitefield",
+                landmark=None,
+                city="Bengaluru",
+                state="Karnataka",
+                pin_code="560066",
+                phone="9876543211",
+                gstin="29BBBBB0000B1Z5"
+            )
+        ]
+        db.add_all(warehouses)
+        db.commit()
