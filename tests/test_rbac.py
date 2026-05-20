@@ -34,12 +34,13 @@ def headers(token: str) -> dict:
 
 class TestUnauthenticated:
     def test_vendors_list_requires_auth(self, client):
-        """GET /api/vendors/ without token should return 401 or 403."""
-        response = client.get("/api/vendors/")
+        """POST /api/vendors/ without token should return 401 or 403."""
+        response = client.post("/api/vendors/", json={})
         assert response.status_code in (401, 403)
 
     def test_items_list_requires_auth(self, client):
-        response = client.get("/api/items/")
+        """POST /api/items/ without token should return 401 or 403."""
+        response = client.post("/api/items/", json={})
         assert response.status_code in (401, 403)
 
     def test_purchase_orders_requires_auth(self, client):
@@ -65,20 +66,20 @@ class TestTokenValidity:
             role="ADMIN",
             expires_minutes=-1  # Already expired
         )
-        response = client.get("/api/vendors/",
+        response = client.get("/api/pos/",
                                headers=headers(expired_token))
         assert response.status_code in (401, 403)
 
     def test_malformed_token_is_rejected(self, client):
         """A garbage token string must be rejected."""
-        response = client.get("/api/vendors/",
+        response = client.get("/api/pos/",
                                headers={"Authorization": "Bearer this.is.garbage"})
         assert response.status_code in (401, 403)
 
     def test_missing_bearer_prefix_rejected(self, client):
         """Token without 'Bearer' prefix must be rejected."""
         valid_token = make_token(str(uuid.uuid4()), "ADMIN")
-        response = client.get("/api/vendors/",
+        response = client.get("/api/pos/",
                                headers={"Authorization": valid_token})
         assert response.status_code in (401, 403)
 

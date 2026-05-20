@@ -56,11 +56,10 @@ def standard_po(db_session, vendor, warehouse, finance_user):
     )
     line = models.POLineItem(
         id=uuid.uuid4(),
-        purchase_order_id=po.id,
-        item_id=item.id if False else ItemFactory.create(db_session, vendor_id=vendor.id).id,
-        quantity=100,
+        po_id=po.id,
+        item_id=ItemFactory.create(db_session, vendor_id=vendor.id).id,
+        quantity_ordered=100,
         unit_price=Decimal("1000.00"),
-        total_price=Decimal("100000.00"),
         uom="Nos",
         quantity_received=0,
     )
@@ -236,10 +235,10 @@ class TestTaxCalculation:
         invoice = InvoiceFactory.create(
             db_session, vendor=vendor, po=po, grn=grn, created_by=finance_user,
             total_amount=base_amount,
-            tax_amount=expected_gst
+            gst_amount=expected_gst
         )
 
-        assert invoice.tax_amount == expected_gst
+        assert invoice.gst_amount == expected_gst
 
     def test_zero_tax_amount_is_valid(
             self, db_session, vendor, warehouse, finance_user):
@@ -253,6 +252,6 @@ class TestTaxCalculation:
         )
         invoice = InvoiceFactory.create(
             db_session, vendor=vendor, po=po, grn=grn, created_by=finance_user,
-            tax_amount=Decimal("0.00")
+            gst_amount=Decimal("0.00")
         )
-        assert invoice.tax_amount == Decimal("0.00")
+        assert invoice.gst_amount == Decimal("0.00")

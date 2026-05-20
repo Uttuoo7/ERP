@@ -188,12 +188,13 @@ class GRNFactory:
         defaults = dict(
             id=uuid.uuid4(),
             grn_number=f"GRN-FACT-{n:04d}",
-            purchase_order_id=po.id,
+            po_id=po.id,
             vendor_id=po.vendor_id,
             warehouse_id=warehouse.id,
             status="COMPLETED",
             receipt_date=datetime.utcnow(),
             received_by_id=received_by.id,
+            delivery_challan_number=f"DC-FACT-{n:04d}",
         )
         defaults.update(kwargs)
         obj = models.GoodsReceiptNote(**defaults)
@@ -216,17 +217,17 @@ class InvoiceFactory:
             id=uuid.uuid4(),
             invoice_number=f"INV-FACT-{n:04d}",
             vendor_id=vendor.id,
-            purchase_order_id=po.id,
+            po_id=po.id,
             grn_id=grn.id,
             status=models.InvoiceStatus.PENDING_MATCHING,
             invoice_date=datetime.utcnow(),
             due_date=datetime.utcnow() + timedelta(days=30),
             total_amount=total,
-            tax_amount=total * Decimal("0.18"),
-            created_by_id=created_by.id,
+            gst_amount=total * Decimal("0.18"),
         )
         defaults.update(kwargs)
         obj = models.Invoice(**defaults)
         db.add(obj)
         db.flush()
         return obj
+

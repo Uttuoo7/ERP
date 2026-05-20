@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 
 import jwt
 
-JWT_SECRET = os.getenv("JWT_SECRET", "test_jwt_secret_key_for_erp_testing_only")
+JWT_SECRET = os.getenv("SECRET_KEY", os.getenv("JWT_SECRET", "test_jwt_secret_key_for_erp_testing_only"))
 JWT_ALGORITHM = "HS256"
 
 
@@ -18,6 +18,7 @@ def make_token(user_id: str, role: str, expires_minutes: int = 60) -> str:
     payload = {
         "sub": user_id,
         "role": role,
+        "type": "access",
         "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
         "iat": datetime.now(timezone.utc),
     }

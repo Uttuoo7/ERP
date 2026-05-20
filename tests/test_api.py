@@ -41,7 +41,7 @@ class TestVendorsAPI:
             "contact_email": "api_test_vendor@test.local",
             "contact_phone": "9000000001",
             "default_lead_time_days": 7,
-            "gstin": f"27API{uuid.uuid4().hex[:8].upper()}Z5",
+            "gstin": f"27ABCDE{1000 + hash(uuid.uuid4()) % 9000}F1Z5",
             "is_msme": False,
         }
         response = client.post("/api/vendors/", json=payload, headers=admin_headers)
@@ -94,7 +94,7 @@ class TestPurchaseOrdersAPI:
     def test_create_po_missing_vendor_returns_422(self, client, buyer_headers):
         """PO without vendor_id should fail validation."""
         payload = {"po_number": "PO-INVALID-001", "total_amount": 1000}
-        response = client.post("/api/pos/", json=payload, headers=buyer_headers)
+        response = client.post("/api/pos/convert-rfq", json=payload, headers=buyer_headers)
         assert response.status_code in (422, 400)
 
 

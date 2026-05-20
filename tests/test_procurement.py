@@ -56,12 +56,10 @@ def issued_po(db_session, vendor, warehouse, buyer):
     # Add a line item
     line = models.POLineItem(
         id=__import__("uuid").uuid4(),
-        purchase_order_id=po.id,
+        po_id=po.id,
         item_id=ItemFactory.create(db_session, vendor_id=vendor.id).id,
-        quantity=100,
+        quantity_ordered=100,
         unit_price=Decimal("250.00"),
-        total_price=Decimal("25000.00"),
-        uom="Nos",
         quantity_received=0,
     )
     db_session.add(line)
@@ -96,7 +94,7 @@ class TestPurchaseOrderCreation:
         """PO total_amount should equal sum of line_item total_price."""
         po = db_session.query(models.PurchaseOrder)\
             .filter_by(id=issued_po.id).first()
-        line_total = sum(li.total_price for li in po.line_items)
+        line_total = sum(li.quantity_ordered * li.unit_price for li in po.line_items)
         assert abs(po.total_amount - line_total) < Decimal("0.01")
 
     def test_po_vendor_reference_integrity(self, db_session, issued_po, vendor):
@@ -128,7 +126,7 @@ class TestGoodsReceiptNote:
         """GRN must reference the originating PO."""
         grn = db_session.query(models.GoodsReceiptNote)\
             .filter_by(id=completed_grn.id).first()
-        assert grn.purchase_order_id == issued_po.id
+        assert grn.po_id == issued_po.id
 
     def test_grn_completed_status(self, db_session, completed_grn):
         """GRN created by factory should be in COMPLETED status."""
@@ -152,7 +150,7 @@ class TestAPInvoice:
             grn=completed_grn, created_by=buyer
         )
         inv = db_session.query(models.Invoice).filter_by(id=invoice.id).first()
-        assert inv.purchase_order_id == issued_po.id
+        assert inv.po_id == issued_po.id
         assert inv.grn_id == completed_grn.id
 
     def test_invoice_initial_status_is_pending_matching(
@@ -200,8 +198,8 @@ class TestProcurementChainIntegrity:
         )
 
         # Verify the complete chain
-        assert grn.purchase_order_id == po.id
-        assert invoice.purchase_order_id == po.id
+        assert grn.po_id == po.id
+        assert invoice.po_id == po.id
         assert invoice.grn_id == grn.id
         assert invoice.vendor_id == vendor.id == po.vendor_id
 

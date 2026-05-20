@@ -30,8 +30,8 @@ def get_command_center_metrics(
         ).count()
         
     # Low stock alerts count
-    low_stock_alerts = db.query(models.WarehouseStock).filter(
-        models.WarehouseStock.current_stock <= models.WarehouseStock.reorder_level
+    low_stock_alerts = db.query(models.InventoryLedger).filter(
+        models.InventoryLedger.quantity_on_hand <= models.InventoryLedger.reorder_point
     ).count()
 
     # Mismatched invoices count
@@ -67,8 +67,8 @@ def get_procurement_analytics(
     Procurement intelligence metrics: win/loss ratios, lead times.
     """
     # Quote conversions
-    rfqs_total = db.query(models.RFQ).count()
-    rfqs_converted = db.query(models.RFQ).filter(models.RFQ.status == "CONVERTED").count()
+    rfqs_total = db.query(models.RequestForQuotation).count()
+    rfqs_converted = db.query(models.RequestForQuotation).filter(models.RequestForQuotation.status == "CONVERTED").count()
     conversion_rate = (rfqs_converted / rfqs_total * 100) if rfqs_total > 0 else 72.0
 
     # Win ratios by vendor
@@ -109,19 +109,19 @@ def get_inventory_analytics(
     """
     # Sum values of all inventory stock
     total_val = db.query(
-        func.sum(models.WarehouseStock.current_stock * models.Item.base_price)
+        func.sum(models.WarehouseStock.quantity_on_hand * models.Item.unit_price)
     ).join(models.Item, models.WarehouseStock.item_id == models.Item.id).scalar() or 0
 
     # Dead stock lines (stock with 0 movement)
     dead_stock = db.query(models.WarehouseStock).filter(
-        models.WarehouseStock.current_stock > 0,
-        models.WarehouseStock.available_stock == models.WarehouseStock.current_stock
+        models.WarehouseStock.quantity_on_hand > 0,
+        models.WarehouseStock.quantity_reserved == 0
     ).count()
 
     # Fast vs slow SKUs
     fast_moving = db.query(
         models.Item.name.label("item_name"),
-        func.sum(models.WarehouseStock.current_stock).label("stock")
+        func.sum(models.WarehouseStock.quantity_on_hand).label("stock")
     ).join(models.WarehouseStock, models.Item.id == models.WarehouseStock.item_id)\
      .group_by(models.Item.name)\
      .order_by(desc("stock"))\
