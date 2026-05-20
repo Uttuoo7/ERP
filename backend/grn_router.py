@@ -1,84 +1,90 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from . import models, schemas, database
 import uuid
-import random
+import logging
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from . import database, dependencies, models, schemas, grn_services
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-def generate_grn_number():
-    return f"GRN-{random.randint(1000, 99999)}"
+@router.get("/", response_model=List[schemas.GoodsReceiptNoteResponse])
+def get_goods_receipt_notes(
+    po_id: Optional[uuid.UUID] = None,
+    vendor_id: Optional[uuid.UUID] = None,
+    status_filter: Optional[str] = None,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    query = db.query(models.GoodsReceiptNote)
+    if po_id:
+        query = query.filter(models.GoodsReceiptNote.po_id == po_id)
+    if vendor_id:
+        query = query.filter(models.GoodsReceiptNote.vendor_id == vendor_id)
+    if status_filter:
+        query = query.filter(models.GoodsReceiptNote.status == status_filter)
+        
+    return query.order_by(models.GoodsReceiptNote.receipt_date.desc()).all()
 
-@router.post("/", response_model=schemas.GoodsReceiptNoteResponse)
-def create_grn(grn: schemas.GoodsReceiptNoteCreate, db: Session = Depends(database.get_db)):
-    db_po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == grn.po_id).first()
-    if not db_po:
-        raise HTTPException(status_code=404, detail="PO not found")
-        
-    db_grn = models.GoodsReceiptNote(
-        grn_number=generate_grn_number(),
-        po_id=grn.po_id
-    )
-    db.add(db_grn)
-    db.flush()
-    
-    all_fulfilled = True
-    
-    for req_item in grn.received_items:
-        # Find PO line item
-        po_line = db.query(models.POLineItem).filter(
-            models.POLineItem.po_id == grn.po_id,
-            models.POLineItem.item_id == req_item.item_id
-        ).first()
-        
-        if not po_line:
-            continue
-            
-        # Update PO line quantity_received
-        po_line.quantity_received += req_item.quantity_accepted
-        
-        # Create GRN line items for accepted
-        if req_item.quantity_accepted > 0:
-            db_grn_line = models.GRNLineItem(
-                grn_id=db_grn.id,
-                po_line_item_id=po_line.id,
-                quantity_received=req_item.quantity_accepted,
-                is_quality_approved=True
-            )
-            db.add(db_grn_line)
-            
-            # Update Inventory Ledger
-            ledger = db.query(models.InventoryLedger).filter(models.InventoryLedger.item_id == req_item.item_id).first()
-            if not ledger:
-                ledger = models.InventoryLedger(item_id=req_item.item_id, quantity_on_hand=req_item.quantity_accepted)
-                db.add(ledger)
-            else:
-                ledger.quantity_on_hand += req_item.quantity_accepted
-                
-            # Create Transaction
-            tx = models.InventoryTransaction(
-                item_id=req_item.item_id,
-                transaction_type="RECEIPT",
-                quantity=req_item.quantity_accepted,
-                reference_id=db_grn.id
-            )
-            db.add(tx)
-    
-    # Check all lines to see if PO is fulfilled
-    db.flush()
-    all_lines = db.query(models.POLineItem).filter(models.POLineItem.po_id == grn.po_id).all()
-    for line in all_lines:
-        if line.quantity_received < line.quantity_ordered:
-            all_fulfilled = False
-            break
-            
-    # Update PO Status
-    if all_fulfilled:
-        db_po.status = models.POStatus.FULFILLED
-    else:
-        db_po.status = models.POStatus.PARTIAL_RECEIPT
-        
-    db.commit()
-    db.refresh(db_grn)
-    return db_grn
+@router.get("/{id}", response_model=schemas.GoodsReceiptNoteResponse)
+def get_goods_receipt_note(
+    id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == id).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="Goods Receipt Note not located.")
+    return grn
+
+@router.post("/convert-po", response_model=schemas.GoodsReceiptNoteResponse, status_code=status.HTTP_201_CREATED)
+def convert_po_to_grn_draft_api(
+    payload: schemas.GoodsReceiptNoteCreate,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.WAREHOUSE]))
+):
+    """
+    Receiving Gate: Converts PO into a draft GRN unloading challan list.
+    """
+    try:
+        grn = grn_services.convert_po_to_grn_draft(
+            db=db,
+            po_id=payload.po_id,
+            warehouse_id=payload.warehouse_id,
+            challan_no=payload.delivery_challan_number,
+            vehicle_details=payload.vehicle_details,
+            received_items=payload.received_items,
+            user_id=current_user.id,
+            remarks=payload.remarks
+        )
+        return grn
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"PO received draft error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal error generating receiving challan draft.")
+
+@router.post("/{id}/qc-submit", response_model=schemas.GoodsReceiptNoteResponse)
+def submit_grn_qc_inspection_api(
+    id: uuid.UUID,
+    payload: schemas.GRNQCInspect,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.WAREHOUSE]))
+):
+    """
+    QC Gate: Reconciles counts, adjusts stock ledgers, and registers serial lot batches.
+    """
+    try:
+        grn = grn_services.submit_qc_inspection(
+            db=db,
+            grn_id=id,
+            qc_items=payload.qc_items,
+            inspector_id=current_user.id,
+            remarks=payload.remarks
+        )
+        return grn
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"QC inspect error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal error during Quality Control submission.")

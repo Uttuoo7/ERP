@@ -1,0 +1,27 @@
+# ============================================================
+# Docker Compose: Isolated PostgreSQL Test Environment
+# Use: docker-compose -f docker-compose.test.yml up -d
+# ============================================================
+version: '3.8'
+
+services:
+  db_test:
+    image: postgres:15-alpine
+    container_name: p2p_erp_test_db
+    environment:
+      POSTGRES_USER: erp_test_user
+      POSTGRES_PASSWORD: erp_test_password
+      POSTGRES_DB: p2p_erp_test
+    ports:
+      - "5433:5432"           # Use port 5433 to avoid conflicts with prod DB on 5432
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U erp_test_user -d p2p_erp_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres_test_data:

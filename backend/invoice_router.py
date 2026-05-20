@@ -1,71 +1,185 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from . import models, schemas, database
 import uuid
+import logging
+from typing import List, Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from . import models, schemas, database, dependencies, matching_engine, finance_engine, event_dispatcher
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
-@router.post("/", response_model=schemas.InvoiceResponse)
-def create_invoice(invoice_req: schemas.InvoiceCreateRequest, db: Session = Depends(database.get_db)):
-    db_po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == invoice_req.po_id).first()
-    if not db_po:
-        raise HTTPException(status_code=404, detail="PO not found")
-        
-    total_amount = sum(item.quantity_billed * item.unit_price for item in invoice_req.billed_items)
-    
-    db_invoice = models.Invoice(
-        invoice_number=invoice_req.invoice_number,
-        po_id=db_po.id,
-        vendor_id=db_po.vendor_id,
+@router.post("/", response_model=schemas.InvoiceResponse, status_code=status.HTTP_201_CREATED)
+def create_invoice(
+    payload: schemas.InvoiceCreateRequest,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """
+    AP Entry:
+    Creates a new draft vendor invoice with links to PO and optional GRN.
+    Immediately triggers 3-way matching engine checks to analyze variances.
+    """
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == payload.po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="Associated Purchase Order not found.")
+
+    # Calculate net total amount
+    # net total = sum(billed_qty * billed_price + tax - discount)
+    subtotal = sum(item.quantity_billed * item.unit_price for item in payload.billed_items)
+    tax_total = sum(item.tax_amount for item in payload.billed_items)
+    discount_total = sum(item.discount_amount for item in payload.billed_items)
+    total_amount = subtotal + tax_total - discount_total
+
+    # Create Invoice Header
+    invoice = models.Invoice(
+        po_id=payload.po_id,
+        vendor_id=po.vendor_id,
+        grn_id=payload.grn_id,
+        invoice_number=payload.invoice_number,
+        vendor_invoice_number=payload.vendor_invoice_number,
+        invoice_date=payload.invoice_date or datetime.utcnow() if 'datetime' in globals() else models.datetime.utcnow() if hasattr(models, 'datetime') else models.datetime.utcnow(),
+        due_date=models.datetime.utcnow() + models.timedelta(days=30) if hasattr(models, 'timedelta') else models.datetime.utcnow() + models.datetime.timedelta(days=30) if hasattr(models, 'datetime') else None,
         total_amount=total_amount,
-        gst_amount=invoice_req.gst_amount,
-        tds_deducted=invoice_req.tds_deducted,
-        status=models.InvoiceStatus.PENDING
+        gst_amount=payload.gst_amount,
+        tds_deducted=payload.tds_deducted,
+        discount_amount=payload.discount_amount or discount_total,
+        status=models.InvoiceStatus.DRAFT,
+        workflow_state="DRAFT",
+        remarks=payload.remarks
     )
-    db.add(db_invoice)
+    
+    # Check for datetime library compatibility safely
+    from datetime import datetime, timedelta
+    invoice.invoice_date = payload.invoice_date or datetime.utcnow()
+    invoice.due_date = datetime.utcnow() + timedelta(days=30)
+
+    db.add(invoice)
     db.flush()
-    
-    has_discrepancy = False
-    
-    for billed in invoice_req.billed_items:
-        po_line = db.query(models.POLineItem).filter(
-            models.POLineItem.po_id == db_po.id,
-            models.POLineItem.item_id == billed.item_id
-        ).first()
-        
+
+    # Create Invoice Line Items
+    for item in payload.billed_items:
+        po_line = db.query(models.POLineItem).filter(models.POLineItem.id == item.po_line_item_id).first()
         if not po_line:
-            has_discrepancy = True
-            continue
-            
-        # Match Algorithm
-        # Check 1: quantity_billed <= quantity_received (accepted from GRN)
-        if billed.quantity_billed > po_line.quantity_received:
-            has_discrepancy = True
-            
-        # Check 2: unit_price <= PO unit_price
-        if billed.unit_price > po_line.unit_price:
-            has_discrepancy = True
-            
-        po_line.quantity_billed += billed.quantity_billed
-            
-        db_inv_line = models.InvoiceLineItem(
-            invoice_id=db_invoice.id,
-            po_line_item_id=po_line.id,
-            quantity_billed=billed.quantity_billed,
-            unit_price=billed.unit_price
+            raise HTTPException(status_code=400, detail=f"PO line item {item.po_line_item_id} not found.")
+
+        # Update PO line billed balance
+        po_line.quantity_billed += item.quantity_billed
+
+        inv_line = models.InvoiceLineItem(
+            invoice_id=invoice.id,
+            po_line_item_id=item.po_line_item_id,
+            grn_line_item_id=item.grn_line_item_id,
+            quantity_billed=item.quantity_billed,
+            unit_price=item.unit_price,
+            tax_amount=item.tax_amount,
+            discount_amount=item.discount_amount,
+            variance_amount=Decimal("0.0") if 'Decimal' in globals() else models.Decimal("0.0") if hasattr(models, 'Decimal') else 0.0,
+            match_status="PENDING_MATCHING"
         )
-        db.add(db_inv_line)
         
-    if has_discrepancy:
-        db_invoice.status = models.InvoiceStatus.DISCREPANCY
-    else:
-        db_invoice.status = models.InvoiceStatus.MATCHED
-        
+        # Safe decimal setup
+        from decimal import Decimal
+        inv_line.variance_amount = Decimal("0.0")
+
+        db.add(inv_line)
+
+    db.flush()
+
+    # Emit invoice created event
+    event_dispatcher.dispatch(
+        "invoice_created",
+        {
+            "invoice_id": invoice.id,
+            "invoice_number": invoice.invoice_number,
+            "total_amount": float(total_amount)
+        },
+        db
+    )
+
+    # Immediately execute 3-Way Match Check
+    matching_engine.run_three_way_match(db, invoice.id)
+
     db.commit()
-    db.refresh(db_invoice)
-    return db_invoice
+    db.refresh(invoice)
+    return invoice
 
 @router.get("/", response_model=List[schemas.InvoiceResponse])
-def get_invoices(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
-    return db.query(models.Invoice).offset(skip).limit(limit).all()
+def get_invoices(
+    status_filter: Optional[str] = None,
+    vendor_id: Optional[uuid.UUID] = None,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    query = db.query(models.Invoice)
+    if status_filter:
+        query = query.filter(models.Invoice.status == status_filter)
+    if vendor_id:
+        query = query.filter(models.Invoice.vendor_id == vendor_id)
+    return query.order_by(models.Invoice.invoice_date.desc()).all()
+
+@router.get("/{id}", response_model=schemas.InvoiceResponse)
+def get_invoice_by_id(
+    id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    invoice = db.query(models.Invoice).filter(models.Invoice.id == id).first()
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Invoice record not found.")
+    return invoice
+
+@router.post("/{id}/run-match", response_model=schemas.InvoiceResponse)
+def trigger_three_way_match_api(
+    id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """
+    Triggers 3-way matching check manually.
+    """
+    try:
+        invoice = matching_engine.run_three_way_match(db, id)
+        return invoice
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error executing match check: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal 3-way matching evaluation failure.")
+
+@router.post("/{id}/resolve-variance", response_model=schemas.InvoiceResponse)
+def resolve_invoice_variance_api(
+    id: uuid.UUID,
+    resolutions: Dict[uuid.UUID, str],
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.FINANCE]))
+):
+    """
+    Allows authorized finance review teams to resolve mismatches and override discrepancies.
+    """
+    try:
+        invoice = matching_engine.resolve_variance(db, id, resolutions, current_user.id)
+        return invoice
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error resolving variance: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal matching override failure.")
+
+@router.post("/{id}/post-ledger", response_model=schemas.FinancialTransactionResponse)
+def post_invoice_voucher_manually_api(
+    id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN]))
+):
+    """
+    AP Post: Approves an invoice, posts balanced journal records to GL accounts,
+    enqueues Tally export tasks.
+    """
+    try:
+        tx = finance_engine.create_ap_invoice_voucher(db, id, current_user.id)
+        return tx
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Post ledger manually error: {str(e)}")
+        raise HTTPException(status_code=500, detail="General Ledger accounting post failed.")

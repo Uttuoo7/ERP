@@ -195,6 +195,21 @@ export default function PurchaseOrderEdit() {
             </div>
           )}
         </div>
+        
+        {po && (po.created_by || po.updated_by) && (
+          <div className="border-t pt-4 mt-6 text-xs text-gray-500 flex justify-between">
+            <div>
+              {po.created_by && (
+                <p>Created by: <span className="font-medium text-gray-700">{po.created_by.username}</span> on {new Date(po.order_date).toLocaleString()}</p>
+              )}
+            </div>
+            <div className="text-right">
+              {po.updated_by && po.updated_at && (
+                <p>Last modified by: <span className="font-medium text-gray-700">{po.updated_by.username}</span> on {new Date(po.updated_at).toLocaleString()}</p>
+              )}
+            </div>
+          </div>
+        )}
       </form>
       {isAddItemModalOpen && (
         <AddItemModal onClose={() => setIsAddItemModalOpen(false)} onSuccess={fetchCatalog} />

@@ -1,11 +1,79 @@
+import uuid
+import logging
+from typing import List, Set
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from . import models, database, auth_utils
 
+logger = logging.getLogger(__name__)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)):
+# Unified Role-to-Permission sets
+ROLE_PERMISSIONS = {
+    models.Role.SUPER_ADMIN: {
+        "pr:view", "pr:create", "pr:edit", "pr:approve",
+        "rfq:view", "rfq:create", "rfq:invite", "rfq:compare", "rfq:select",
+        "po:view", "po:create", "po:edit", "po:approve", "po:amend",
+        "grn:view", "grn:create", "grn:qc",
+        "invoice:view", "invoice:create", "invoice:post", "invoice:resolve",
+        "finance:liabilities", "finance:payments", "tally:sync",
+        "rbac:manage", "rbac:audit"
+    },
+    models.Role.ADMIN: {
+        "pr:view", "pr:create", "pr:edit", "pr:approve",
+        "rfq:view", "rfq:create", "rfq:invite", "rfq:compare", "rfq:select",
+        "po:view", "po:create", "po:edit", "po:approve", "po:amend",
+        "grn:view", "grn:create", "grn:qc",
+        "invoice:view", "invoice:create", "invoice:post", "invoice:resolve",
+        "finance:liabilities", "finance:payments", "tally:sync",
+        "rbac:manage", "rbac:audit"
+    },
+    models.Role.PROCUREMENT_MANAGER: {
+        "pr:view", "pr:create", "pr:edit", "pr:approve",
+        "rfq:view", "rfq:create", "rfq:invite", "rfq:compare", "rfq:select",
+        "po:view", "po:create", "po:edit", "po:approve", "po:amend",
+        "grn:view"
+    },
+    models.Role.BUYER: {
+        "pr:view", "pr:create", "pr:edit",
+        "rfq:view", "rfq:create", "rfq:invite",
+        "po:view", "po:create"
+    },
+    models.Role.FINANCE_MANAGER: {
+        "po:view",
+        "grn:view",
+        "invoice:view", "invoice:create", "invoice:post", "invoice:resolve",
+        "finance:liabilities", "finance:payments", "tally:sync"
+    },
+    models.Role.FINANCE: {
+        "po:view",
+        "invoice:view", "invoice:create", "invoice:post",
+        "finance:liabilities", "finance:payments"
+    },
+    models.Role.WAREHOUSE_MANAGER: {
+        "po:view",
+        "grn:view", "grn:create", "grn:qc",
+        "inventory:view", "inventory:adjust"
+    },
+    models.Role.WAREHOUSE: {
+        "po:view",
+        "grn:view", "grn:create",
+        "inventory:view"
+    },
+    models.Role.EMPLOYEE: {
+        "pr:view", "pr:create",
+        "inventory:view"
+    },
+    models.Role.AUDITOR: {
+        "pr:view", "rfq:view", "po:view", "grn:view", "invoice:view", "finance:liabilities"
+    },
+    models.Role.VENDOR: {
+        "rfq:view", "po:view"
+    }
+}
+
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(database.get_db)) -> models.User:
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -21,7 +89,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
         
     try:
-        import uuid
         user_uuid = uuid.UUID(user_id_str)
     except ValueError:
         raise credentials_exception
@@ -31,7 +98,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
-def require_role(allowed_roles: list[models.Role]):
+def require_role(allowed_roles: List[models.Role]):
     def role_checker(current_user: models.User = Depends(get_current_user)):
         if current_user.role not in allowed_roles and current_user.role != models.Role.ADMIN:
             raise HTTPException(
@@ -40,3 +107,33 @@ def require_role(allowed_roles: list[models.Role]):
             )
         return current_user
     return role_checker
+
+def require_permission(permission: str):
+    """
+    Dynamic Permissions validation engine decorator:
+    Checks if active user role carries the specified permission.
+    Logs failed security access blocks in the security audit queue.
+    """
+    def permission_checker(
+        current_user: models.User = Depends(get_current_user),
+        db: Session = Depends(database.get_db)
+    ):
+        user_role = current_user.role
+        perms = ROLE_PERMISSIONS.get(user_role, set())
+        
+        if permission not in perms and user_role not in [models.Role.ADMIN, models.Role.SUPER_ADMIN]:
+            # Log failed attempt in security audit
+            log = models.AuditSecurityLog(
+                user_id=current_user.id,
+                action="ACCESS_BLOCKED",
+                details=f"User attempted to invoke endpoint requiring permission {permission} with role {user_role.value}"
+            )
+            db.add(log)
+            db.commit()
+            
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access Denied. Operation requires permission: {permission}"
+            )
+        return current_user
+    return permission_checker

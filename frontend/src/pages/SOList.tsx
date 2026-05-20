@@ -36,6 +36,7 @@ export default function SOList() {
           <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">
             <tr>
               <th className="px-6 py-3">SO Number</th>
+              <th className="px-6 py-3">Requested By</th>
               <th className="px-6 py-3">Date</th>
               <th className="px-6 py-3">Delivery To</th>
               <th className="px-6 py-3">Status</th>
@@ -48,6 +49,7 @@ export default function SOList() {
                 <td className="px-6 py-4 font-medium text-blue-600 hover:underline">
                   <Link to={`/sales-orders/${so.id}`}>{so.so_number}</Link>
                 </td>
+                <td className="px-6 py-4 text-sm text-gray-600">{so.requester?.username || '-'}</td>
                 <td className="px-6 py-4">{new Date(so.created_at).toLocaleDateString()}</td>
                 <td className="px-6 py-4">{so.delivery_type} - {so.ship_to_city}</td>
                 <td className="px-6 py-4">
@@ -70,7 +72,7 @@ export default function SOList() {
             ))}
             {sos.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-6 py-8 text-center text-gray-500 italic">No Requisitions found. Create one to get started.</td>
+                <td colSpan={6} className="px-6 py-8 text-center text-gray-500 italic">No Requisitions found. Create one to get started.</td>
               </tr>
             )}
           </tbody>

@@ -156,6 +156,21 @@ export default function SODetails() {
               ))}
             </div>
           </div>
+          
+          {so && (so.requester || so.updated_by) && (
+            <div className="border-t pt-4 mt-6 text-xs text-gray-500 flex justify-between">
+              <div>
+                {so.requester && (
+                  <p>Requested by: <span className="font-medium text-gray-700">{so.requester.username}</span> on {new Date(so.created_at).toLocaleString()}</p>
+                )}
+              </div>
+              <div className="text-right">
+                {so.updated_by && so.updated_at && (
+                  <p>Last modified by: <span className="font-medium text-gray-700">{so.updated_by.username}</span> on {new Date(so.updated_at).toLocaleString()}</p>
+                )}
+              </div>
+            </div>
+          )}
         </form>
       </div>
 

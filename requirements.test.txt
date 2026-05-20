@@ -1,0 +1,8 @@
+# Test-only dependencies
+# Install with: py -m pip install -r requirements.test.txt
+pytest>=7.4
+pytest-cov>=4.1
+pytest-env>=1.1
+httpx>=0.25        # needed by FastAPI TestClient
+ruff>=0.1          # linting
+psycopg2-binary    # PostgreSQL adapter for test DB

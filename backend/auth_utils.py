@@ -20,6 +20,11 @@ def get_password_hash(password):
     return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
+
+def hash_password(password: str) -> str:
+    """Legacy alias for get_password_hash used by test factories."""
+    return get_password_hash(password)
+
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:

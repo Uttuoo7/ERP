@@ -28,8 +28,8 @@ def create_sales_order(so: schemas.InternalSalesOrderCreate, db: Session = Depen
         ship_to_landmark=so.ship_to_landmark,
         ship_to_city=so.ship_to_city,
         ship_to_state=so.ship_to_state,
-        ship_to_pin_code=so.ship_to_pin_code,
-        ship_to_phone=so.ship_to_phone
+        ship_to_phone=so.ship_to_phone,
+        updated_by_id=current_user.id
     )
     db.add(db_so)
     db.flush()
@@ -89,6 +89,7 @@ def update_sales_order(so_id: uuid.UUID, so: schemas.InternalSalesOrderUpdate, d
             )
             db.add(db_line_item)
         
+        db_so.updated_by_id = current_user.id
         db.refresh(db_so)
         return db_so
 
