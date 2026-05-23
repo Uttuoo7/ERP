@@ -24,6 +24,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     container_name: p2p_erp_backend
+    command: sh -c "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port 8000"
     restart: unless-stopped
     ports:
       - "8000:8000"

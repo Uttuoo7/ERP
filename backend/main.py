@@ -25,15 +25,10 @@ from .auth_router import router as auth_router, seed_users
 from .analytics_router import router as analytics_router
 from . import database
 
-# Create database tables
 os.makedirs('uploads', exist_ok=True)
-Base.metadata.create_all(bind=engine)
-
-try:
-    from auto_migrate import auto_migrate
-    auto_migrate()
-except Exception as e:
-    logger.error(f"Failed to execute database auto-migration check: {e}")
+# Note: Database creation and migration is now handled by Alembic.
+# Run 'alembic upgrade head' before starting the application.
+logger.info("Application starting. Ensure Alembic migrations are up to date.")
 
 # Seed users and warehouses (skip during testing — tests manage their own DB)
 if not os.getenv("TESTING"):
