@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import DashboardSkeleton from './components/DashboardSkeleton';
 import NotificationDropdown from './components/NotificationDropdown';
-import { AuthProvider, useAuth } from './AuthContext';
+import { useAuthStore } from './store/authStore';
 
 // --- Dynamic Route Lazy Loading Optimizations ---
 const VendorList = lazy(() => import('./pages/VendorList'));
@@ -47,8 +47,8 @@ const RBACMatrixManager = lazy(() => import('./pages/RBACMatrixManager'));
 const NotificationCenter = lazy(() => import('./pages/NotificationCenter'));
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/login" />;
+  const isAuthenticated = useAuthStore(state => state.isAuthenticated);
+  if (!isAuthenticated) return <Navigate to="/login" />;
   return children;
 }
 
@@ -71,7 +71,9 @@ function SidebarLink({ to, children }: { to: string; children: React.ReactNode }
 }
 
 function Sidebar() {
-  const { role, logout, email } = useAuth();
+  const role = useAuthStore(state => state.user?.role);
+  const email = useAuthStore(state => state.user?.email);
+  const logout = useAuthStore(state => state.logout);
   
   const isSuper = role === 'SUPER_ADMIN';
   const isAdmin = role === 'ADMIN' || isSuper;
@@ -207,7 +209,6 @@ function MainLayout({ children }: { children: React.ReactNode }) {
 function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
         <Router>
           <Suspense fallback={<DashboardSkeleton />}>
             <Routes>
@@ -266,7 +267,6 @@ function App() {
           </Suspense>
         </Router>
         <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
-      </AuthProvider>
     </ErrorBoundary>
   );
 }
