@@ -1,82 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  FileText, Search, Plus, Filter, RefreshCw, Clock, CheckCircle, HelpCircle, ArrowRight, Loader2, DollarSign, ShieldAlert, Award
+  FileText, Search, Plus, Filter, RefreshCw, DollarSign, ShieldAlert, Award
 } from 'lucide-react';
-import toast from 'react-hot-toast';
-import { getPOs } from '../api';
-
-interface PurchaseOrder {
-  id: string;
-  po_number: string;
-  order_date: string;
-  expected_delivery_date: string;
-  status: string;
-  workflow_state: string;
-  amendment_version: number;
-  total_amount: number;
-  vendor?: {
-    name: string;
-  };
-  department?: {
-    name: string;
-  };
-}
+import { usePurchaseOrders } from '../hooks/queries/usePurchaseOrders';
+import { DataTable } from '../components/ui/DataTable';
+import { columns } from './pos/columns';
 
 const POList: React.FC = () => {
-  const [pos, setPos] = useState<PurchaseOrder[]>([]);
-  const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
 
-  const fetchPOs = async () => {
-    setLoading(true);
-    try {
-      const res = await getPOs({
-        search: search || undefined,
-        status_filter: statusFilter || undefined
-      });
-      setPos(res.data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchPOs();
-  }, [statusFilter]);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "DRAFT":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">Draft</span>;
-      case "PENDING_APPROVAL":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-150 animate-pulse">Awaiting Approval</span>;
-      case "APPROVED":
-      case "ISSUED":
-      case "SENT":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-150">Issued / Sent</span>;
-      case "PARTIAL_RECEIPT":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-150">Partially Received</span>;
-      case "FULFILLED":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-150">Fulfilled</span>;
-      case "CLOSED":
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-600">Closed</span>;
-      default:
-        return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-150 text-gray-700">{status}</span>;
-    }
-  };
+  const { data: pos = [], isLoading, refetch } = usePurchaseOrders({
+    search: search || undefined,
+    status_filter: statusFilter || undefined
+  });
 
   // KPIs
   const totalOpenCommitment = pos
-    .filter(p => p.status !== 'CLOSED' && p.status !== 'CANCELLED')
-    .reduce((sum, p) => sum + parseFloat(p.total_amount as any || 0), 0);
+    .filter((p: any) => p.status !== 'CLOSED' && p.status !== 'CANCELLED')
+    .reduce((sum: number, p: any) => sum + parseFloat(p.total_amount || 0), 0);
 
-  const openCount = pos.filter(p => p.status !== 'CLOSED' && p.status !== 'CANCELLED').length;
+  const openCount = pos.filter((p: any) => p.status !== 'CLOSED' && p.status !== 'CANCELLED').length;
   
-  const delayedCount = pos.filter(p => {
+  const delayedCount = pos.filter((p: any) => {
     if (p.status === 'CLOSED' || p.status === 'CANCELLED' || p.status === 'FULFILLED') return false;
     return new Date(p.expected_delivery_date) < new Date();
   }).length;
@@ -152,7 +99,7 @@ const POList: React.FC = () => {
             placeholder="Search by PO number..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetchPOs()}
+            onKeyDown={(e) => e.key === 'Enter' && refetch()}
             className="w-full bg-transparent border-none outline-none text-sm text-slate-900"
           />
         </div>
@@ -176,7 +123,7 @@ const POList: React.FC = () => {
           </div>
 
           <button
-            onClick={fetchPOs}
+            onClick={() => refetch()}
             className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-500 transition-all border border-slate-100"
           >
             <RefreshCw className="w-4.5 h-4.5" />
@@ -185,78 +132,17 @@ const POList: React.FC = () => {
       </div>
 
       {/* PO Listing */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-            <p className="text-xs text-slate-400 font-semibold">Scanning order ledgers...</p>
+      {pos.length === 0 && !isLoading ? (
+        <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-slate-100 shadow-sm p-6 gap-3">
+          <Award className="w-12 h-12 text-slate-350" />
+          <div>
+            <p className="text-sm font-bold text-slate-900">No Purchase Orders Located</p>
+            <p className="text-xs text-slate-400 mt-1">Convert winning vendor quote proposals to award formal POs.</p>
           </div>
-        ) : pos.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20 text-center p-6 gap-3">
-            <Award className="w-12 h-12 text-slate-350" />
-            <div>
-              <p className="text-sm font-bold text-slate-900">No Purchase Orders Located</p>
-              <p className="text-xs text-slate-400 mt-1">Convert winning vendor quote proposals to award formal POs.</p>
-            </div>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
-                  <th className="px-6 py-4">PO Reference</th>
-                  <th className="px-6 py-4">Vendor Partner</th>
-                  <th className="px-6 py-4">Cost Area</th>
-                  <th className="px-6 py-4">Expected Date</th>
-                  <th className="px-6 py-4 text-right">Commitment Value</th>
-                  <th className="px-6 py-4 text-center">Version</th>
-                  <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-sm font-semibold text-slate-700">
-                {pos.map(po => (
-                  <tr key={po.id} className="hover:bg-slate-50/40">
-                    <td className="px-6 py-4">
-                      <Link to={`/pos/${po.id}`} className="font-extrabold text-blue-600 hover:text-blue-700">
-                        {po.po_number}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-4 text-slate-900 font-bold">
-                      {po.vendor?.name || 'N/A'}
-                    </td>
-                    <td className="px-6 py-4 text-slate-400">
-                      {po.department?.name || 'Central Purchasing'}
-                    </td>
-                    <td className="px-6 py-4 text-slate-500 font-medium">
-                      {new Date(po.expected_delivery_date).toLocaleDateString()}
-                    </td>
-                    <td className="px-6 py-4 text-right text-slate-900 font-black">
-                      ₹{parseFloat(po.total_amount as any).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-black bg-slate-100 text-slate-500 border border-slate-200">
-                        v{po.amendment_version}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      {getStatusBadge(po.status)}
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <Link
-                        to={`/pos/${po.id}`}
-                        className="inline-flex items-center gap-1 px-3 py-1 text-xs font-bold text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-all"
-                      >
-                        Details <ArrowRight className="w-3.5 h-3.5" />
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </div>
+      ) : (
+        <DataTable columns={columns} data={pos} isLoading={isLoading} />
+      )}
     </div>
   );
 };
