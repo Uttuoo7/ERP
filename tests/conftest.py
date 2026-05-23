@@ -6,6 +6,10 @@ Imports all fixture modules so they are automatically discovered by pytest.
 import os
 import sys
 
+# Mark as testing environment BEFORE any backend imports to prevent
+# module-level side effects (DB seeding, etc.)
+os.environ["TESTING"] = "1"
+
 # Ensure project root is on the Python path so `backend` package is importable
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 

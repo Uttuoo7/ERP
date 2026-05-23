@@ -29,10 +29,20 @@ from . import database
 os.makedirs('uploads', exist_ok=True)
 Base.metadata.create_all(bind=engine)
 
-# Seed users and warehouses
-with database.SessionLocal() as db:
-    seed_users(db)
-    seed_warehouses(db)
+try:
+    from auto_migrate import auto_migrate
+    auto_migrate()
+except Exception as e:
+    logger.error(f"Failed to execute database auto-migration check: {e}")
+
+# Seed users and warehouses (skip during testing — tests manage their own DB)
+if not os.getenv("TESTING"):
+    try:
+        with database.SessionLocal() as db:
+            seed_users(db)
+            seed_warehouses(db)
+    except Exception as e:
+        logger.warning(f"Seeding failed (may be benign on restart): {e}")
 
 app = FastAPI(title="P2P ERP API")
 
@@ -65,6 +75,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+from .core.middleware.tenant_middleware import TenantMiddleware
+app.add_middleware(TenantMiddleware)
 
 @app.get("/api/health", tags=["Health"])
 def health_check():

@@ -93,9 +93,24 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     except ValueError:
         raise credentials_exception
         
-    user = db.query(models.User).filter(models.User.id == user_uuid).first()
+    # Bypass tenant filter temporarily to resolve the authentication context safely
+    database.set_bypass_tenant_filter(True)
+    try:
+        user = db.query(models.User).filter(models.User.id == user_uuid).first()
+    finally:
+        database.set_bypass_tenant_filter(False)
+        
     if user is None or not user.is_active:
         raise credentials_exception
+        
+    # Verify JWT claim isolation matches the resolved User profile
+    token_tenant = payload.get("tenant_id")
+    if token_tenant and str(user.tenant_id) != token_tenant:
+        raise credentials_exception
+        
+    # Dynamically bind resolved tenant context to active thread/context session
+    database.set_current_tenant_id(user.tenant_id)
+    
     return user
 
 def require_role(allowed_roles: List[models.Role]):
@@ -122,14 +137,18 @@ def require_permission(permission: str):
         perms = ROLE_PERMISSIONS.get(user_role, set())
         
         if permission not in perms and user_role not in [models.Role.ADMIN, models.Role.SUPER_ADMIN]:
-            # Log failed attempt in security audit
-            log = models.AuditSecurityLog(
-                user_id=current_user.id,
-                action="ACCESS_BLOCKED",
-                details=f"User attempted to invoke endpoint requiring permission {permission} with role {user_role.value}"
-            )
-            db.add(log)
-            db.commit()
+            # Log failed attempt in security audit (best-effort, non-blocking)
+            try:
+                log = models.AuditSecurityLog(
+                    user_id=current_user.id,
+                    action="ACCESS_BLOCKED",
+                    details=f"User attempted to invoke endpoint requiring permission {permission} with role {user_role.value}"
+                )
+                db.add(log)
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.warning("Failed to write security audit log for ACCESS_BLOCKED event")
             
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

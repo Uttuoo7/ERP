@@ -1,43 +1,67 @@
 """
 tests/fixtures/db.py
-Test database fixture with automatic fallback to SQLite if PostgreSQL is unavailable.
+Test database fixture with in-memory SQLite for complete isolation.
 """
 
 import os
+import uuid
 import pytest
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, TypeDecorator, String
 from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import StaticPool
 
-# Default to SQLite in-memory for environments without PostgreSQL.
-DEFAULT_SQLITE_URL = "sqlite:///./test.db"
-TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", DEFAULT_SQLITE_URL)
+
+class SQLiteUUID(TypeDecorator):
+    """Platform-independent UUID type that works with SQLite.
+    Stores UUIDs as 32-character hex strings in SQLite instead of
+    the native PostgreSQL UUID type which doesn't work in SQLite.
+    """
+    impl = String(32)
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            if isinstance(value, uuid.UUID):
+                return value.hex
+            return uuid.UUID(value).hex
+        return value
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            if not isinstance(value, uuid.UUID):
+                return uuid.UUID(value)
+        return value
+
 
 @pytest.fixture(scope="session")
 def test_engine():
-    """Create a SQLAlchemy engine for the test database.
-    Attempts to connect to the provided URL; on failure, falls back to SQLite.
+    """Create a SQLAlchemy engine using an in-memory SQLite database.
+    Uses StaticPool to ensure all connections share the same in-memory DB.
+    Patches PostgreSQL UUID columns to use a SQLite-compatible string type.
     """
+    from sqlalchemy.dialects.postgresql import UUID as PG_UUID
     from backend.models import Base
-    try:
-        engine = create_engine(
-            TEST_DATABASE_URL,
-            pool_pre_ping=True,
-            echo=False,
-        )
-        # Test connection for PostgreSQL URLs
-        if not TEST_DATABASE_URL.startswith("sqlite"):
-            # try connecting to ensure server is up
-            conn = engine.connect()
-            conn.close()
-    except Exception as e:
-        # Fallback to SQLite
-        engine = create_engine(
-            DEFAULT_SQLITE_URL,
-            connect_args={"check_same_thread": False},
-            echo=False,
-        )
-        # Log fallback (would normally use logger)
-        print("[INFO] PostgreSQL unavailable, falling back to SQLite for tests.")
+
+    # Patch all PostgreSQL UUID columns to use SQLite-compatible type
+    for table in Base.metadata.tables.values():
+        for column in table.columns:
+            if isinstance(column.type, PG_UUID):
+                column.type = SQLiteUUID()
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        echo=False,
+    )
+
+    # Enable foreign keys on every connection (SQLite requirement)
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     # Create tables
     Base.metadata.create_all(bind=engine)
     yield engine
@@ -45,10 +69,12 @@ def test_engine():
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
+
 @pytest.fixture(scope="session")
 def test_session_factory(test_engine):
     """Create a session factory bound to the test engine."""
     return sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
 
 @pytest.fixture
 def db_session(test_engine, test_session_factory) -> Session:

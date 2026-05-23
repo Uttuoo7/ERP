@@ -19,7 +19,7 @@ def login(login_data: schemas.LoginRequest, db: Session = Depends(database.get_d
     if not user.is_active:
         raise HTTPException(status_code=400, detail="User is inactive")
 
-    token_data = {"sub": str(user.id), "role": user.role}
+    token_data = {"sub": str(user.id), "role": user.role, "tenant_id": str(user.tenant_id)}
     access_token = auth_utils.create_access_token(data=token_data)
     refresh_token = auth_utils.create_refresh_token(data=token_data)
     
@@ -70,7 +70,7 @@ def refresh_token(refresh_data: schemas.TokenRefresh, db: Session = Depends(data
     if not user or not user.is_active:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
 
-    token_data = {"sub": str(user.id), "role": user.role}
+    token_data = {"sub": str(user.id), "role": user.role, "tenant_id": str(user.tenant_id)}
     new_access_token = auth_utils.create_access_token(data=token_data)
     new_refresh_token = auth_utils.create_refresh_token(data=token_data)
     

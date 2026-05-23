@@ -158,6 +158,68 @@ def record_receipt(
 
     return ledger_entry
 
+def calculate_fifo_cost(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    qty_to_issue: int,
+    fallback_cost: Decimal
+) -> Decimal:
+    """
+    Computes unit valuation cost for stock issues using standard FIFO layers.
+    Chronologically matches issued amounts against positive receipt layers.
+    """
+    if qty_to_issue <= 0:
+        return Decimal("0.0")
+
+    # 1. Fetch positive receipt layers
+    receipt_layers = db.query(models.StockLedgerEntry).filter(
+        models.StockLedgerEntry.item_id == item_id,
+        models.StockLedgerEntry.warehouse_id == warehouse_id,
+        models.StockLedgerEntry.quantity_change > 0
+    ).order_by(models.StockLedgerEntry.created_at.asc()).all()
+
+    if not receipt_layers:
+        return fallback_cost
+
+    # 2. Fetch total historically issued quantity (excluding this transaction)
+    total_issued_query = db.query(models.StockLedgerEntry).filter(
+        models.StockLedgerEntry.item_id == item_id,
+        models.StockLedgerEntry.warehouse_id == warehouse_id,
+        models.StockLedgerEntry.quantity_change < 0
+    ).all()
+    
+    total_issued = abs(sum(entry.quantity_change for entry in total_issued_query))
+
+    # 3. Consume layers chronologically
+    remaining_to_issue = qty_to_issue
+    total_cost = Decimal("0.0")
+    
+    for layer in receipt_layers:
+        layer_qty = layer.quantity_change
+        
+        if total_issued >= layer_qty:
+            # Layer is fully consumed by past issues
+            total_issued -= layer_qty
+            continue
+        
+        # Partially or fully unconsumed layer
+        available_in_layer = layer_qty - total_issued
+        total_issued = 0 # All historical issues accounted for
+        
+        consume_qty = min(remaining_to_issue, available_in_layer)
+        total_cost += consume_qty * layer.valuation_unit_cost
+        remaining_to_issue -= consume_qty
+        
+        if remaining_to_issue <= 0:
+            break
+
+    # If layers didn't fully satisfy, apply fallback for remaining quantity
+    if remaining_to_issue > 0:
+        total_cost += remaining_to_issue * fallback_cost
+
+    return total_cost / Decimal(str(qty_to_issue))
+
 def record_issue(
     db: Session,
     item_id: uuid.UUID,
@@ -172,7 +234,7 @@ def record_issue(
 ) -> models.StockLedgerEntry:
     """
     ACID Issue Handler: Validates and deducts stock, locks serial numbers to ISSUED,
-    updates warehouse matrices, logs immutable stock ledger.
+    updates warehouse matrices, logs immutable stock ledger using FIFO valuation layers.
     """
     logger.info(f"Inventory Engine: Processing ISSUE of {qty} units for SKU id {item_id} from WH id {warehouse_id}")
 
@@ -184,6 +246,9 @@ def record_issue(
 
     if not stock_bal or stock_bal.quantity_on_hand < qty:
         raise ValueError("Sufficient on-hand quantity not located for this stock balance.")
+
+    # Calculate FIFO Costing unit cost
+    fifo_unit_cost = calculate_fifo_cost(db, item_id, warehouse_id, qty, stock_bal.valuation_unit_cost)
 
     # Deduct stock
     stock_bal.quantity_on_hand -= qty
@@ -206,7 +271,7 @@ def record_issue(
         transaction_type="ISSUE",
         quantity_change=-qty,
         resulting_on_hand=stock_bal.quantity_on_hand,
-        valuation_unit_cost=stock_bal.valuation_unit_cost,
+        valuation_unit_cost=fifo_unit_cost,
         reference_type=reference_type,
         reference_id=reference_id,
         remarks=remarks or f"Stock issue under {reference_type}",
@@ -221,7 +286,7 @@ def record_issue(
         batch_id=batch_id,
         transaction_type="ISSUE",
         quantity=-qty,
-        valuation_unit_cost=stock_bal.valuation_unit_cost,
+        valuation_unit_cost=fifo_unit_cost,
         reference_id=reference_id,
         remarks=remarks,
         created_by_id=user_id

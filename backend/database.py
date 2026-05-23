@@ -72,9 +72,59 @@ if is_sqlite:
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+import contextvars
+import uuid
+from sqlalchemy.orm import with_loader_criteria
+
+# Re-export for tenant_middleware and other modules that import from database
+from .models import SYSTEM_DEFAULT_TENANT_UUID  # noqa: F401
+
+current_tenant_id_context = contextvars.ContextVar("current_tenant_id", default=None)
+bypass_tenant_filter_context = contextvars.ContextVar("bypass_tenant_filter", default=False)
+
+def set_current_tenant_id(tenant_id: uuid.UUID):
+    current_tenant_id_context.set(tenant_id)
+
+def get_current_tenant_id() -> uuid.UUID:
+    return current_tenant_id_context.get()
+
+def set_bypass_tenant_filter(bypass: bool):
+    bypass_tenant_filter_context.set(bypass)
+
+def get_bypass_tenant_filter() -> bool:
+    return bypass_tenant_filter_context.get()
+
+@event.listens_for(SessionLocal, "do_orm_execute")
+def opt_in_tenant_filtering(orm_execute_state):
+    if orm_execute_state.is_select and not get_bypass_tenant_filter():
+        from .models import Base
+        tenant_id = get_current_tenant_id()
+        
+        if tenant_id:
+            # Enforce matching tenant AND active record (not deleted)
+            orm_execute_state.statement = orm_execute_state.statement.options(
+                with_loader_criteria(
+                    Base,
+                    lambda cls: (cls.tenant_id == tenant_id) & (cls.is_deleted == False),
+                    include_aliases=True,
+                    propagate_to_loaders=True
+                )
+            )
+        else:
+            # Enforce active record only (useful for non-tenant sessions like global auth, seeding)
+            orm_execute_state.statement = orm_execute_state.statement.options(
+                with_loader_criteria(
+                    Base,
+                    lambda cls: cls.is_deleted == False,
+                    include_aliases=True,
+                    propagate_to_loaders=True
+                )
+            )
+
 def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+

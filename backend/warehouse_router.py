@@ -39,5 +39,8 @@ def seed_warehouses(db: Session):
                 gstin="29BBBBB0000B1Z5"
             )
         ]
-        db.add_all(warehouses)
-        db.commit()
+        try:
+            db.add_all(warehouses)
+            db.commit()
+        except Exception:
+            db.rollback()

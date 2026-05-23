@@ -8,8 +8,11 @@ from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, 
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
+SYSTEM_DEFAULT_TENANT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
+
 class Base(DeclarativeBase):
-    pass
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True, default=SYSTEM_DEFAULT_TENANT_UUID)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class POStatus(str, enum.Enum):
     DRAFT = "DRAFT"
@@ -67,7 +70,6 @@ class BaseMaster(Base):
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     updated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class Department(BaseMaster):
     __tablename__ = "departments"

@@ -7,6 +7,7 @@ from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from . import models, schemas, event_dispatcher, tally_sync
+from .services.double_entry_ledger import DoubleEntryLedgerEngine
 
 logger = logging.getLogger(__name__)
 
@@ -143,10 +144,7 @@ def create_ap_invoice_voucher(db: Session, invoice_id: uuid.UUID, user_id: uuid.
     credit_sum += net_liability
 
     # Validate Ledger Balancing Integrity
-    if debit_sum != credit_sum:
-        raise ValueError(
-            f"Voucher balancing error: Debits ({debit_sum}) must match Credits ({credit_sum})."
-        )
+    DoubleEntryLedgerEngine.validate_ledger_balance(debit_sum, credit_sum)
 
     # 5. Populate Tax Lines Breakdown
     if gst_val > 0:
@@ -269,6 +267,9 @@ def record_vendor_payment(
         credit_amount=amount,
         narration=f"Cash/Bank outflow via {payment_method}. Ref {ref_no}"
     ))
+
+    # Validate Ledger Balancing Integrity
+    DoubleEntryLedgerEngine.validate_ledger_balance(amount, amount)
 
     # 3. Apply Allocations to Outstanding Liabilities
     for alloc in invoice_allocations:

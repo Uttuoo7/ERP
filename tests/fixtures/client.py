@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 # Set the test environment BEFORE importing the app
+os.environ["TESTING"] = "1"
 os.environ.setdefault("TEST_DATABASE_URL",
     "postgresql://erp_test_user:erp_test_password@localhost:5433/p2p_erp_test")
 

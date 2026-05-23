@@ -1,5 +1,5 @@
 import React, { Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import DashboardSkeleton from './components/DashboardSkeleton';
@@ -52,6 +52,24 @@ function ProtectedRoute({ children }: { children: JSX.Element }) {
   return children;
 }
 
+function SidebarLink({ to, children }: { to: string; children: React.ReactNode }) {
+  const location = useLocation();
+  const isActive = location.pathname === to || location.pathname.startsWith(to + '/');
+  return (
+    <Link
+      to={to}
+      className="erp-sidebar-link"
+      style={{
+        background: isActive ? 'var(--color-primary-50)' : undefined,
+        color: isActive ? 'var(--color-primary-600)' : undefined,
+        fontWeight: isActive ? 600 : undefined,
+      }}
+    >
+      {children}
+    </Link>
+  );
+}
+
 function Sidebar() {
   const { role, logout, email } = useAuth();
   
@@ -64,69 +82,90 @@ function Sidebar() {
   const isAuditor = role === 'AUDITOR' || isAdmin;
 
   return (
-    <aside className="w-64 bg-white shadow-md flex flex-col min-h-screen shrink-0 border-r border-slate-150 text-xs font-semibold text-slate-500">
-      <div className="p-6 border-b border-slate-100 bg-slate-50/50">
-        <h2 className="text-lg font-black text-blue-600 tracking-widest uppercase">P2P ERP Gateway</h2>
-        <p className="text-[10px] text-slate-400 font-bold mt-1.5 truncate">User: <span className="font-extrabold text-slate-700">{email}</span></p>
-        <span className="px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 font-black text-[9px] mt-2 inline-block uppercase tracking-wider">{role}</span>
+    <aside className="erp-sidebar">
+      <div className="erp-sidebar-brand">
+        <h2>P2P ERP</h2>
+        <p style={{
+          fontSize: '0.625rem',
+          color: 'var(--text-tertiary)',
+          fontWeight: 600,
+          marginTop: '0.5rem',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+          <span style={{ color: 'var(--text-secondary)', fontWeight: 700 }}>{email}</span>
+        </p>
+        <span className="erp-badge erp-badge-primary" style={{ marginTop: '0.5rem' }}>
+          {role}
+        </span>
       </div>
-      <nav className="mt-4 flex-1 overflow-y-auto px-4 py-2 space-y-5">
-        <div className="space-y-1">
-          <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Workplace</h3>
-          <Link to="/inbox" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Approval Tasks Inbox</Link>
-          <Link to="/notifications" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">My Alerts Feed</Link>
+      <nav className="erp-sidebar-nav">
+        <div>
+          <div className="erp-sidebar-section-label">Workplace</div>
+          <SidebarLink to="/inbox">Approval Tasks Inbox</SidebarLink>
+          <SidebarLink to="/notifications">My Alerts Feed</SidebarLink>
         </div>
 
         {isProcurement && (
-          <div className="space-y-1">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Insights</h3>
-            <Link to="/analytics" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Operational Spend Metrics</Link>
+          <div>
+            <div className="erp-sidebar-section-label">Insights</div>
+            <SidebarLink to="/analytics">Operational Spend Metrics</SidebarLink>
           </div>
         )}
 
         {isAdmin && (
-          <div className="space-y-1">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Administration</h3>
-            <Link to="/masters" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Master Data Engine</Link>
-            <Link to="/workflows/builder" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Workflows Setup</Link>
-            <Link to="/rbac/matrix" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">RBAC Roles Matrix</Link>
+          <div>
+            <div className="erp-sidebar-section-label">Administration</div>
+            <SidebarLink to="/masters">Master Data Engine</SidebarLink>
+            <SidebarLink to="/workflows/builder">Workflows Setup</SidebarLink>
+            <SidebarLink to="/rbac/matrix">RBAC Roles Matrix</SidebarLink>
           </div>
         )}
 
         {(isProcurement || isEmployee) && (
-          <div className="space-y-1">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Purchasing & RFQ</h3>
-            <Link to="/requisitions" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Purchase Requisitions</Link>
+          <div>
+            <div className="erp-sidebar-section-label">Purchasing &amp; RFQ</div>
+            <SidebarLink to="/requisitions">Purchase Requisitions</SidebarLink>
             {isProcurement && (
               <>
-                <Link to="/rfqs" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Requests For Quotations</Link>
-                <Link to="/vendors" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Vendors Registry</Link>
-                <Link to="/pos" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Purchase Orders</Link>
+                <SidebarLink to="/rfqs">Requests For Quotations</SidebarLink>
+                <SidebarLink to="/vendors">Vendors Registry</SidebarLink>
+                <SidebarLink to="/pos">Purchase Orders</SidebarLink>
               </>
             )}
           </div>
         )}
         
         {isWarehouse && (
-          <div className="space-y-1">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Warehouse & Receipts</h3>
-            <Link to="/inventory" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Stock Ledgers</Link>
-            <Link to="/grns" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Warehouse Receipts (GRN)</Link>
+          <div>
+            <div className="erp-sidebar-section-label">Warehouse &amp; Receipts</div>
+            <SidebarLink to="/inventory">Stock Ledgers</SidebarLink>
+            <SidebarLink to="/grns">Warehouse Receipts (GRN)</SidebarLink>
           </div>
         )}
 
         {isFinance && (
-          <div className="space-y-1">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2 px-2">Accounts Payable</h3>
-            <Link to="/invoices" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Vendor Invoices</Link>
-            <Link to="/finance/liabilities" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Accrued Liabilities</Link>
-            <Link to="/finance/ledger" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">G/L Postings Explorer</Link>
-            <Link to="/finance/tally" className="block px-3 py-2 text-slate-650 hover:bg-slate-50 hover:text-blue-600 rounded-lg transition-colors">Tally ERP Exporters</Link>
+          <div>
+            <div className="erp-sidebar-section-label">Accounts Payable</div>
+            <SidebarLink to="/invoices">Vendor Invoices</SidebarLink>
+            <SidebarLink to="/finance/liabilities">Accrued Liabilities</SidebarLink>
+            <SidebarLink to="/finance/ledger">G/L Postings Explorer</SidebarLink>
+            <SidebarLink to="/finance/tally">Tally ERP Exporters</SidebarLink>
           </div>
         )}
       </nav>
-      <div className="p-6 border-t border-slate-100">
-        <button onClick={logout} className="w-full px-4 py-2.5 bg-rose-50 hover:bg-rose-100/55 border border-rose-100 text-rose-600 rounded-xl transition-all font-black text-center uppercase tracking-wider">Logout Session</button>
+      <div style={{
+        padding: '1.25rem 1rem',
+        borderTop: '1px solid var(--border-subtle)',
+      }}>
+        <button
+          onClick={logout}
+          className="erp-btn erp-btn-danger erp-btn-sm"
+          style={{ width: '100%', fontSize: '0.6875rem', letterSpacing: '0.06em', textTransform: 'uppercase' as const }}
+        >
+          Logout Session
+        </button>
       </div>
     </aside>
   );
@@ -134,16 +173,30 @@ function Sidebar() {
 
 function MainLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50 flex">
+    <div className="min-h-screen flex" style={{ background: 'var(--surface-0)' }}>
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        <header className="bg-white border-b border-slate-150 h-16 px-8 flex items-center justify-between shrink-0">
-          <span className="text-[10px] text-slate-450 font-black uppercase tracking-widest">Enterprise ERP Maturity Sprint Gateway</span>
-          <div className="flex items-center gap-4">
+        <header
+          className="h-16 px-8 flex items-center justify-between shrink-0"
+          style={{
+            background: 'var(--surface-card)',
+            borderBottom: '1px solid var(--border-subtle)',
+          }}
+        >
+          <span style={{
+            fontSize: '0.625rem',
+            color: 'var(--text-tertiary)',
+            fontWeight: 800,
+            textTransform: 'uppercase' as const,
+            letterSpacing: '0.1em',
+          }}>
+            Enterprise ERP SaaS Platform
+          </span>
+          <div className="flex items-center gap-3">
             <NotificationDropdown />
           </div>
         </header>
-        <main className="flex-1">
+        <main className="flex-1" style={{ background: 'var(--surface-0)' }}>
           {children}
         </main>
       </div>
