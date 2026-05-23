@@ -4,12 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 import traceback
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from .logging_config import logger, tenant_id_var, user_id_var
+import time
+from asgi_correlation_id import CorrelationIdMiddleware
+from asgi_correlation_id.context import correlation_id
+from typing import Callable
+from starlette.middleware.base import BaseHTTPMiddleware
 from .database import engine
 from .models import Base
 from .vendor_router import router as vendor_router
@@ -41,13 +41,42 @@ if not os.getenv("TESTING"):
 
 app = FastAPI(title="P2P ERP API")
 
+# Setup Observability Middlewares
+app.add_middleware(CorrelationIdMiddleware)
 
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: Callable):
+        start_time = time.perf_counter()
+        
+        # We can extract basic auth/tenant info from headers for logging
+        # Alternatively, routers can set this contextvar later.
+        
+        response = await call_next(request)
+        
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        
+        logger.info(
+            "Request completed",
+            extra={
+                "endpoint": request.url.path,
+                "method": request.method,
+                "status_code": response.status_code,
+                "duration_ms": round(duration_ms, 2)
+            }
+        )
+        return response
 
+app.add_middleware(RequestLoggingMiddleware)
 # Global Exception Handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Global Exception caught: {exc}")
-    logger.error(traceback.format_exc())
+    logger.exception(
+        f"Global Exception caught: {exc}", 
+        extra={
+            "endpoint": request.url.path,
+            "method": request.method
+        }
+    )
     return JSONResponse(
         status_code=500,
         content={"message": "An internal server error occurred.", "detail": str(exc)},

@@ -9,3 +9,5 @@ python-multipart
 python-dotenv
 celery
 redis
+python-json-logger
+asgi-correlation-id

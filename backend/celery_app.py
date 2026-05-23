@@ -27,4 +27,28 @@ celery_app.conf.update(
     worker_prefetch_multiplier=1, # Fair distribution
 )
 
+from celery.signals import task_prerun, task_postrun
+import time
+from backend.logging_config import logger, correlation_id
+
+task_start_times = {}
+
+@task_prerun.connect
+def task_prerun_handler(task_id, task, *args, **kwargs):
+    # If correlation_id was passed in headers, we could set it here
+    # For now, we generate or use the task_id as correlation_id
+    correlation_id.set(task_id)
+    task_start_times[task_id] = time.perf_counter()
+    logger.info(f"Task started", extra={"task_name": task.name, "worker_id": "celery"})
+
+@task_postrun.connect
+def task_postrun_handler(task_id, task, retval, state, *args, **kwargs):
+    start_time = task_start_times.pop(task_id, time.perf_counter())
+    duration_ms = (time.perf_counter() - start_time) * 1000
+    
+    if state == "FAILURE":
+        logger.error(f"Task failed", extra={"task_name": task.name, "worker_id": "celery", "duration_ms": round(duration_ms, 2)})
+    else:
+        logger.info(f"Task completed", extra={"task_name": task.name, "worker_id": "celery", "duration_ms": round(duration_ms, 2), "status": state})
+
 # Optional: Configure periodic tasks here later (Celery Beat)
