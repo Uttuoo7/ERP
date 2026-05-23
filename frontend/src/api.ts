@@ -1,8 +1,10 @@
 import axios from 'axios';
 import toast from 'react-hot-toast';
 
+const BASE_URL = import.meta.env.VITE_API_URL || '';
+
 const api = axios.create({
-  baseURL: '/api', // Relative path for proxying and static hosting
+  baseURL: `${BASE_URL}/api`, // Use env var if present, else fallback to proxy
 });
 
 api.interceptors.request.use((config) => {
@@ -26,7 +28,7 @@ api.interceptors.response.use(
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
           // Dynamic URL for token refresh
-          const res = await axios.post(`${window.location.origin}/api/auth/refresh`, {
+          const res = await axios.post(`${BASE_URL || window.location.origin}/api/auth/refresh`, {
             refresh_token: refreshToken
           });
           
@@ -89,7 +91,7 @@ export const uploadAttachment = (data: FormData) => api.post('/attachments/uploa
   headers: { 'Content-Type': 'multipart/form-data' }
 });
 export const getAttachments = (sourceType: string, id: string) => api.get(`/attachments/${sourceType}/${id}`);
-export const downloadAttachmentUrl = (id: string) => `${window.location.origin}/api/attachments/download/${id}`;
+export const downloadAttachmentUrl = (id: string) => `${BASE_URL || window.location.origin}/api/attachments/download/${id}`;
 
 export const createInvoice = (data: any) => api.post('/invoices/', data);
 export const getInvoices = (params?: any) => api.get('/invoices/', { params });
@@ -126,7 +128,7 @@ export const bulkImportMaster = (entity: string, file: File) => {
     headers: { 'Content-Type': 'multipart/form-data' }
   });
 };
-export const exportMasterUrl = (entity: string) => `${window.location.origin}/api/masters/${entity}/export`;
+export const exportMasterUrl = (entity: string) => `${BASE_URL || window.location.origin}/api/masters/${entity}/export`;
 
 // -- Workflow Engine Callers --
 export const getWorkflowDefinitions = () => api.get('/workflow/definitions');
@@ -193,8 +195,8 @@ export const markAllNotificationsRead = () => api.post('/notifications/read-all'
 export const markNotificationRead = (id: string) => api.post(`/notifications/${id}/read`);
 
 // -- Analytical Exports Gateways --
-export const exportPOsUrl = () => `${window.location.origin}/api/reports/pos`;
-export const exportLiabilitiesUrl = () => `${window.location.origin}/api/reports/liabilities`;
-export const exportMismatchesUrl = () => `${window.location.origin}/api/reports/mismatches`;
+export const exportPOsUrl = () => `${BASE_URL || window.location.origin}/api/reports/pos`;
+export const exportLiabilitiesUrl = () => `${BASE_URL || window.location.origin}/api/reports/liabilities`;
+export const exportMismatchesUrl = () => `${BASE_URL || window.location.origin}/api/reports/mismatches`;
 
 export default api;
