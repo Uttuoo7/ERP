@@ -15,6 +15,34 @@ services:
         generateValue: true
       - key: CORS_ORIGINS
         value: "*"
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: p2p-erp-redis
+          property: connectionString
+
+  - type: worker
+    name: p2p-erp-celery
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "celery -A backend.celery_app worker --loglevel=info"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.12
+      - key: DATABASE_URL
+        fromDatabase:
+          name: p2p-erp-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: p2p-erp-redis
+          property: connectionString
+
+  - type: redis
+    name: p2p-erp-redis
+    ipAllowList: []
+    plan: free
 
 databases:
   - name: p2p-erp-db

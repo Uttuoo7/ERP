@@ -41,15 +41,7 @@ if not os.getenv("TESTING"):
 
 app = FastAPI(title="P2P ERP API")
 
-from . import queue_workers
 
-@app.on_event("startup")
-def startup_event():
-    queue_workers.start_background_workers()
-
-@app.on_event("shutdown")
-def shutdown_event():
-    queue_workers.stop_background_workers()
 
 # Global Exception Handler
 @app.exception_handler(Exception)
