@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -6,8 +6,11 @@ from . import models, schemas, database, auth_utils, dependencies
 
 router = APIRouter()
 
+from backend.main import limiter
+
 @router.post("/login", response_model=schemas.Token)
-def login(login_data: schemas.LoginRequest, db: Session = Depends(database.get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, login_data: schemas.LoginRequest, db: Session = Depends(database.get_db)):
     user = db.query(models.User).filter(models.User.email == login_data.email).first()
     if not user or not auth_utils.verify_password(login_data.password, user.hashed_password):
         raise HTTPException(

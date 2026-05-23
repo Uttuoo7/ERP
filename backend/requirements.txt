@@ -11,3 +11,4 @@ celery
 redis
 python-json-logger
 asgi-correlation-id
+slowapi
