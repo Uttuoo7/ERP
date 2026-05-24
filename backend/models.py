@@ -396,6 +396,25 @@ class GRNLineItem(Base):
     po_line_item: Mapped["POLineItem"] = relationship(back_populates="grn_line_items")
     item: Mapped["Item"] = relationship()
 
+class OCRProcessingQueue(Base):
+    __tablename__ = "ocr_processing_queue"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    file_name: Mapped[str] = mapped_column(String(255))
+    file_path: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(50), default="QUEUED") # QUEUED, EXTRACTING, MATCHING, COMPLETE, FAILED
+    uploaded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"))
+    raw_text: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    extracted_data_json: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_log: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    # After successful extraction and PO match, link to created invoice
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("invoices.id"), nullable=True)
+
+    uploaded_by: Mapped[Optional["User"]] = relationship()
+
 class Invoice(Base):
     __tablename__ = "invoices"
 
@@ -414,6 +433,11 @@ class Invoice(Base):
     status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT)
     workflow_state: Mapped[Optional[str]] = mapped_column(String(100), default="DRAFT")
     remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # --- AI OCR Intelligence Fields ---
+    confidence_score: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
+    anomaly_flags: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True) # JSON list
+    ai_recommendation: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
     purchase_order: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="invoices")
     vendor: Mapped["Vendor"] = relationship(back_populates="invoices")
@@ -537,8 +561,143 @@ class WorkflowInstance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    tasks: Mapped[List["ApprovalTask"]] = relationship("ApprovalTask", back_populates="instance")
+    approvals: Mapped[List["ApprovalTask"]] = relationship(back_populates="instance")
+
+# --- Analytics & Intelligence Models ---
+
+class VendorScorecard(Base):
+    __tablename__ = "vendor_scorecards"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vendors.id"), unique=True)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    delivery_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=100.0)
+    quality_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=100.0)
+    pricing_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=100.0)
+    overall_score: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=100.0)
+    
+    anomaly_count: Mapped[int] = mapped_column(Integer, default=0)
+    total_spend: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    recommendation_tier: Mapped[str] = mapped_column(String(50), default="PREFERRED") # PREFERRED, STANDARD, ON_WATCH, RESTRICTED
+    
+    vendor: Mapped["Vendor"] = relationship()
+
+class SpendAnalytics(Base):
+    __tablename__ = "spend_analytics"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    record_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    granularity: Mapped[str] = mapped_column(String(20)) # DAILY, MONTHLY, QUARTERLY
+    
+    dimension_type: Mapped[str] = mapped_column(String(50)) # VENDOR, CATEGORY, DEPARTMENT, OVERALL
+    dimension_value_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    
+    total_spend: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    forecasted_spend: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
+    savings_realized: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    po_count: Mapped[int] = mapped_column(Integer, default=0)
+
+class ProcurementKPI(Base):
+    __tablename__ = "procurement_kpis"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    calculated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    avg_cycle_time_days: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0.0)
+    approval_bottleneck_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0.0)
+    invoice_discrepancy_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0.0)
+    total_savings_ytd: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    
+    ai_insights_json: Mapped[Optional[str]] = mapped_column(String, nullable=True) # Text generation insights
+
+# --- Enterprise Document Storage ---
+
+class EnterpriseDocument(Base):
+    __tablename__ = "enterprise_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_type: Mapped[str] = mapped_column(String(50), index=True) # PO, INVOICE, REPORT, GRN
+    reference_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True) # ID of the PO/Invoice
+    
+    file_name: Mapped[str] = mapped_column(String(255))
+    s3_key: Mapped[str] = mapped_column(String(500), unique=True)
+    file_size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    file_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True) # SHA-256 for tampering verification
+    
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    is_signed: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True) # For temporary exports
+    
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"))
+    
+    created_by: Mapped[Optional["User"]] = relationship()
+
+class DocumentAuditLog(Base):
+    __tablename__ = "document_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("enterprise_documents.id"))
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(50)) # GENERATED, VIEWED, DOWNLOADED, SIGNED
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    document: Mapped["EnterpriseDocument"] = relationship()
+    user: Mapped["User"] = relationship()
     history: Mapped[List["WorkflowHistory"]] = relationship("WorkflowHistory", back_populates="instance")
+
+# --- Enterprise Integration Ecosystem ---
+
+class IntegrationConfig(Base):
+    __tablename__ = "integration_configs"
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    provider_name: Mapped[str] = mapped_column(String(50), index=True) # TALLY, SAP, ZOHO, WEBHOOK
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    endpoint_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    api_key_encrypted: Mapped[Optional[str]] = mapped_column(String(500), nullable=True) # Vault storage
+    auth_type: Mapped[str] = mapped_column(String(50), default="BEARER") # BASIC, BEARER, API_KEY
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class SyncEventLog(Base):
+    __tablename__ = "sync_event_logs"
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("integration_configs.id"))
+    entity_type: Mapped[str] = mapped_column(String(50)) # INVOICE, PO, VENDOR
+    entity_id: Mapped[str] = mapped_column(String(50), index=True) # Local UUID
+    
+    direction: Mapped[str] = mapped_column(String(10)) # OUTBOUND, INBOUND
+    status: Mapped[str] = mapped_column(String(20), default="PENDING") # PENDING, SUCCESS, FAILED
+    
+    payload: Mapped[Optional[str]] = mapped_column(String, nullable=True) # JSON payload
+    response_body: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    integration: Mapped["IntegrationConfig"] = relationship()
+
+class ExternalReference(Base):
+    __tablename__ = "external_references"
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    integration_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("integration_configs.id"))
+    
+    internal_entity_type: Mapped[str] = mapped_column(String(50)) # INVOICE, PO
+    internal_entity_id: Mapped[str] = mapped_column(String(50), index=True)
+    
+    external_entity_id: Mapped[str] = mapped_column(String(100), index=True) # e.g. Tally Voucher Number
+    sync_status: Mapped[str] = mapped_column(String(20)) # SYNCED, OUT_OF_SYNC
+    last_synced_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    integration: Mapped["IntegrationConfig"] = relationship()
 
 class ApprovalTask(Base):
     __tablename__ = "approval_tasks"
@@ -916,3 +1075,128 @@ class AnalyticsSnapshot(Base):
     metric_key: Mapped[str] = mapped_column(String(100)) # e.g. spend, liability, delayed, low_stock
     metric_value: Mapped[float] = mapped_column(Numeric)
     dimension_tag: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+class TallyLedgerMapping(Base):
+    __tablename__ = "tally_ledger_mappings"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(50)) # e.g. 'VENDOR', 'TAX', 'BANK'
+    internal_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True) # UUID string or specific code
+    tally_ledger_name: Mapped[str] = mapped_column(String(200))
+    is_synced: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class TallyReconciliationReport(Base):
+    __tablename__ = "tally_reconciliation_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    reconciliation_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    total_erp_vouchers: Mapped[int] = mapped_column(Integer, default=0)
+    total_tally_vouchers: Mapped[int] = mapped_column(Integer, default=0)
+    erp_total_debit: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    tally_total_debit: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    mismatch_count: Mapped[int] = mapped_column(Integer, default=0)
+    mismatch_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # JSON payload
+    status: Mapped[str] = mapped_column(String(50), default="PENDING") # PENDING, MATCHED, MISMATCH
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ImportBatch(Base):
+    __tablename__ = "import_batches"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(50)) # e.g. 'VENDOR', 'ITEM', 'PO'
+    filename: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(50), default="PENDING") # PENDING, VALIDATING, VALIDATED, EXECUTING, COMPLETED, FAILED, ROLLED_BACK
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    success_rows: Mapped[int] = mapped_column(Integer, default=0)
+    failed_rows: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+class ImportErrorLog(Base):
+    __tablename__ = "import_error_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("import_batches.id"))
+    row_number: Mapped[int] = mapped_column(Integer)
+    error_details: Mapped[str] = mapped_column(Text) # JSON string of errors per column
+    raw_data: Mapped[str] = mapped_column(Text) # JSON string of the raw row data
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ColumnMappingTemplate(Base):
+    __tablename__ = "column_mapping_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    entity_type: Mapped[str] = mapped_column(String(50))
+    mapping_config: Mapped[str] = mapped_column(Text) # JSON mapping from file headers to DB fields
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class SLAPolicy(Base):
+    __tablename__ = "sla_policies"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    entity_type: Mapped[str] = mapped_column(String(50)) # e.g. PR_APPROVAL, GRN_PENDING, INVOICE_MATCH
+    max_hours: Mapped[int] = mapped_column(Integer, default=24)
+    escalation_level: Mapped[str] = mapped_column(String(50), default="MANAGER") # MANAGER, DIRECTOR, SYSTEM_AUTO_REJECT
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class SLATimer(Base):
+    __tablename__ = "sla_timers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    policy_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sla_policies.id"))
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True)) # ID of the PR, PO, etc.
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # ACTIVE, BREACHED, RESOLVED
+    deadline: Mapped[datetime] = mapped_column(DateTime)
+    escalation_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+class EscalationLog(Base):
+    __tablename__ = "escalation_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    timer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sla_timers.id"))
+    escalation_action: Mapped[str] = mapped_column(String(100)) # e.g., "NOTIFIED_MANAGER", "AUTO_REJECTED"
+    escalation_details: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ApiRequestLog(Base):
+    __tablename__ = "api_request_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    endpoint: Mapped[str] = mapped_column(String(255))
+    method: Mapped[str] = mapped_column(String(10))
+    status_code: Mapped[int] = mapped_column(Integer)
+    response_time_ms: Mapped[float] = mapped_column(Float)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    error_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class QueueTaskLog(Base):
+    __tablename__ = "queue_task_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[str] = mapped_column(String(255), unique=True)
+    task_name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(50)) # SUCCESS, FAILURE, RETRY
+    execution_time_ms: Mapped[float] = mapped_column(Float)
+    error_traceback: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class SystemAlert(Base):
+    __tablename__ = "system_alerts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    alert_type: Mapped[str] = mapped_column(String(100)) # e.g. API_DEGRADATION, QUEUE_BACKLOG, SYNC_FAILURE
+    severity: Mapped[str] = mapped_column(String(50)) # CRITICAL, WARNING, INFO
+    message: Mapped[str] = mapped_column(Text)
+    is_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+

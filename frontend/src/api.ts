@@ -199,4 +199,8 @@ export const exportPOsUrl = () => `${BASE_URL || window.location.origin}/api/rep
 export const exportLiabilitiesUrl = () => `${BASE_URL || window.location.origin}/api/reports/liabilities`;
 export const exportMismatchesUrl = () => `${BASE_URL || window.location.origin}/api/reports/mismatches`;
 
+// -- Enterprise Document Generation Callers --
+export const generateDocument = (documentType: string, referenceId: string) => api.post(`/documents/generate/${documentType}/${referenceId}`);
+export const getLatestDocumentUrl = (documentType: string, referenceId: string) => api.get(`/documents/${documentType}/${referenceId}/latest`);
+
 export default api;

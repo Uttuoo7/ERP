@@ -195,24 +195,85 @@ def get_vendors_analytics(
     current_user: models.User = Depends(dependencies.get_current_user)
 ):
     """
-    Vendor reliability scores scorecards.
+    Vendor intelligence scorecards.
     """
-    vendors = db.query(models.Vendor.name).limit(5).all()
-    scorecards = []
+    scorecards = db.query(models.VendorScorecard).join(models.Vendor).all()
     
-    for i, v in enumerate(vendors):
-        # Generate scorecard metrics dynamically
-        on_time = 98.5 - (i * 2.5)
-        rejection = 0.5 + (i * 0.8)
-        scorecards.append({
-            "vendor_name": v.name,
-            "on_time_delivery_pct": on_time,
-            "rejection_rate_pct": rejection,
-            "pricing_competitiveness": "HIGH" if i % 2 == 0 else "MEDIUM",
-            "overall_reliability_score": int(on_time - rejection)
+    # If not aggregated yet, fallback
+    if not scorecards:
+        return {
+            "top_vendors": [],
+            "risk_warnings": [],
+            "metrics": {}
+        }
+
+    results = []
+    warnings = []
+    
+    for sc in scorecards:
+        results.append({
+            "vendor_id": str(sc.vendor_id),
+            "vendor_name": sc.vendor.name if sc.vendor else "Unknown",
+            "overall_score": float(sc.overall_score),
+            "delivery_score": float(sc.delivery_score),
+            "quality_score": float(sc.quality_score),
+            "pricing_score": float(sc.pricing_score),
+            "anomaly_count": sc.anomaly_count,
+            "recommendation_tier": sc.recommendation_tier
         })
         
-    return scorecards
+        if sc.recommendation_tier in ["ON_WATCH", "RESTRICTED"]:
+            warnings.append({
+                "vendor_name": sc.vendor.name if sc.vendor else "Unknown",
+                "reason": f"Low score ({sc.overall_score}) or anomalies ({sc.anomaly_count})",
+                "tier": sc.recommendation_tier
+            })
+            
+    # Sort top vendors by score
+    results.sort(key=lambda x: x["overall_score"], reverse=True)
+
+    return {
+        "top_vendors": results[:5],
+        "risk_warnings": warnings,
+        "metrics": {
+            "total_vendors_scored": len(results)
+        }
+    }
+
+@router.get("/kpis")
+def get_procurement_kpis(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """
+    Retrieves the latest executive procurement KPIs and AI insights.
+    """
+    kpi = db.query(models.ProcurementKPI).order_by(models.ProcurementKPI.calculated_at.desc()).first()
+    if not kpi:
+        return {
+            "avg_cycle_time_days": 0,
+            "approval_bottleneck_rate": 0,
+            "invoice_discrepancy_rate": 0,
+            "total_savings_ytd": 0,
+            "ai_insights": []
+        }
+        
+    import json
+    insights = []
+    if kpi.ai_insights_json:
+        try:
+            insights = json.loads(kpi.ai_insights_json)
+        except:
+            pass
+
+    return {
+        "avg_cycle_time_days": float(kpi.avg_cycle_time_days),
+        "approval_bottleneck_rate": float(kpi.approval_bottleneck_rate),
+        "invoice_discrepancy_rate": float(kpi.invoice_discrepancy_rate),
+        "total_savings_ytd": float(kpi.total_savings_ytd),
+        "ai_insights": insights
+    }
+
 
 # --- Seeding / Dynamic Snapshot triggers ---
 

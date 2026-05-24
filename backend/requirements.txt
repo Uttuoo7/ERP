@@ -12,3 +12,7 @@ redis
 python-json-logger
 asgi-correlation-id
 slowapi
+websockets
+r e p o r t l a b  
+pandas
+openpyxl  

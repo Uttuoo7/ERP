@@ -92,9 +92,9 @@ const WorkflowInbox: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50">
+    <div className="flex flex-col md:flex-row min-h-screen bg-slate-50">
       {/* Sidebar List of Pending Tasks */}
-      <div className="w-96 border-r border-slate-200 bg-white flex flex-col">
+      <div className={`border-r border-slate-200 bg-white flex flex-col ${selectedTask ? 'hidden md:flex w-96' : 'w-full md:w-96'}`}>
         <div className="p-6 border-b border-slate-100 bg-slate-50/50">
           <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Approval Inbox</h1>
           <p className="text-xs text-slate-500 mt-1 font-medium">Action and track workflow requests assigned to you</p>
@@ -150,12 +150,17 @@ const WorkflowInbox: React.FC = () => {
       </div>
 
       {/* Main Details and Actions Workstation */}
-      <div className="flex-1 p-8 flex flex-col lg:flex-row gap-8 overflow-y-auto">
+      <div className={`flex-1 p-4 md:p-8 flex-col lg:flex-row gap-4 md:gap-8 overflow-y-auto ${!selectedTask ? 'hidden md:flex' : 'flex'}`}>
         {selectedTask ? (
           <>
+            <div className="md:hidden mb-2">
+              <button onClick={() => setSelectedTask(null)} className="flex items-center text-blue-600 font-semibold text-sm">
+                <ChevronRight className="w-4 h-4 rotate-180 mr-1" /> Back to Inbox
+              </button>
+            </div>
             {/* Task Details and Comments */}
-            <div className="flex-1 space-y-6">
-              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 space-y-5">
+            <div className="flex-1 space-y-4 md:space-y-6">
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 md:p-6 space-y-4 md:space-y-5">
                 <div>
                   <h2 className="text-xs font-bold text-slate-400 uppercase tracking-widest">Active Task Details</h2>
                   <h3 className="text-xl font-extrabold text-slate-900 mt-1">{selectedTask.step.name}</h3>
@@ -218,7 +223,7 @@ const WorkflowInbox: React.FC = () => {
             </div>
 
             {/* Audit History Timeline */}
-            <div className="w-80 bg-white rounded-2xl border border-slate-100 shadow-sm p-6 flex flex-col gap-5 h-fit">
+            <div className="w-full lg:w-80 bg-white rounded-2xl border border-slate-100 shadow-sm p-4 md:p-6 flex flex-col gap-4 md:gap-5 h-fit mt-4 lg:mt-0">
               <div className="flex items-center gap-2">
                 <History className="w-5 h-5 text-slate-400" />
                 <h3 className="text-base font-bold text-slate-900">Workflow Progress</h3>

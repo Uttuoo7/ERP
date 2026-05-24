@@ -86,6 +86,7 @@ const TallySyncQueue: React.FC = () => {
               <option value="PENDING">Pending Sync</option>
               <option value="SYNCED">Synced Accounts</option>
               <option value="FAILED">Failed Items</option>
+              <option value="DEAD_LETTER">Dead-Letter (Max Retries)</option>
             </select>
           </div>
 

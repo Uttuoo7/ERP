@@ -36,9 +36,17 @@ const NotificationDropdown: React.FC = () => {
 
   useEffect(() => {
     fetchUnreadStats();
-    // Poll unread counts every 15 seconds
-    const interval = setInterval(fetchUnreadStats, 15000);
-    return () => clearInterval(interval);
+
+    const handleNewNotification = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setUnreadCount(prev => prev + 1);
+      
+      // If the dropdown is open, fetch the list again or manually prepend
+      setNotifications(prev => [customEvent.detail, ...prev].slice(0, 5));
+    };
+
+    window.addEventListener('NEW_NOTIFICATION', handleNewNotification);
+    return () => window.removeEventListener('NEW_NOTIFICATION', handleNewNotification);
   }, []);
 
   useEffect(() => {

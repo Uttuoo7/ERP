@@ -3,7 +3,9 @@ import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+import asyncio
 from . import models, schemas, database, dependencies, event_dispatcher
+from .websocket_manager import manager
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -29,6 +31,28 @@ def create_notification(
     db.add(notification)
     db.commit()
     logger.info(f"Recorded in-app notification for user {user_id}: {title}")
+    
+    # Broadcast to WebSocket via Redis Pub/Sub in background
+    payload = {
+        "id": str(notification.id),
+        "type": "NOTIFICATION",
+        "title": title,
+        "message": message,
+        "notif_type": notif_type,
+        "priority": priority,
+        "created_at": notification.created_at.isoformat()
+    }
+    
+    # Use loop if possible, or asyncio.create_task if already in an async context.
+    # We are in a sync function currently, so we use asyncio.run_coroutine_threadsafe 
+    # or handle this properly. Since FastAPI runs in a threadpool for sync routes,
+    # it's best to fire and forget if possible, or create an async wrapper.
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(manager.publish_notification(str(user_id), payload))
+    except RuntimeError:
+        asyncio.run(manager.publish_notification(str(user_id), payload))
+        
     return notification
 
 # Hook Notification builders onto the event dispatcher

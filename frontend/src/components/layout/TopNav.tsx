@@ -1,13 +1,25 @@
 import React from 'react';
 import NotificationDropdown from '../NotificationDropdown';
-import { Search } from 'lucide-react';
+import { Search, Menu } from 'lucide-react';
 
-export function TopNav() {
+interface TopNavProps {
+  onMenuClick?: () => void;
+}
+
+export function TopNav({ onMenuClick }: TopNavProps) {
   return (
-    <header className="h-16 px-6 flex items-center justify-between shrink-0 bg-white border-b border-slate-200">
-      {/* Command Palette Mockup */}
-      <div className="flex-1 max-w-md">
-        <div className="relative group">
+    <header className="h-16 px-4 md:px-6 flex items-center justify-between shrink-0 bg-white border-b border-slate-200">
+      <div className="flex items-center flex-1 max-w-md">
+        {/* Hamburger Menu (Mobile Only) */}
+        <button 
+          className="md:hidden p-2 mr-2 -ml-2 text-slate-500 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md"
+          onClick={onMenuClick}
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+
+        {/* Command Palette Mockup */}
+        <div className="relative group w-full">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <Search className="h-4 w-4 text-slate-400 group-hover:text-blue-500 transition-colors" />
           </div>

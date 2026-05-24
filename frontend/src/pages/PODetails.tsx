@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { 
-  getPO, getPOAmendments, submitPOForApproval, amendPO 
+  getPO, getPOAmendments, submitPOForApproval, amendPO, generateDocument, getLatestDocumentUrl
 } from '../api';
 import DocumentTraceabilityTimeline from '../components/DocumentTraceabilityTimeline';
 
@@ -68,6 +68,7 @@ const PODetails: React.FC = () => {
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [loading, setLoading] = useState(false);
   const [actioning, setActioning] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   // Revisions States
   const [amendments, setAmendments] = useState<Amendment[]>([]);
@@ -129,6 +130,45 @@ const PODetails: React.FC = () => {
       // Handled
     } finally {
       setActioning(false);
+    }
+  };
+
+  const handleGeneratePDF = async () => {
+    setGenerating(true);
+    try {
+      await generateDocument("PURCHASE_ORDER", id!);
+      toast.success("PDF generation requested. You will be notified when ready.");
+      
+      // Setup temporary listener for the websocket completion (simplified flow)
+      const handleDocReady = async (e: Event) => {
+        const customEvent = e as CustomEvent;
+        const payload = customEvent.detail;
+        if (payload.type === 'DOCUMENT_READY' && payload.reference_id === id) {
+           toast.success("Document is ready!");
+           setGenerating(false);
+           window.removeEventListener('NEW_NOTIFICATION', handleDocReady);
+           
+           // Fetch the presigned URL
+           try {
+             const urlRes = await getLatestDocumentUrl("PURCHASE_ORDER", id!);
+             window.open(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}${urlRes.data.download_url}`, '_blank');
+           } catch (err) {
+             toast.error("Failed to fetch secure download URL");
+           }
+        }
+      };
+      
+      window.addEventListener('NEW_NOTIFICATION', handleDocReady);
+      
+      // Fallback timeout in case WS fails
+      setTimeout(() => {
+        window.removeEventListener('NEW_NOTIFICATION', handleDocReady);
+        setGenerating(false);
+      }, 10000);
+      
+    } catch (err) {
+      toast.error("Failed to request document generation.");
+      setGenerating(false);
     }
   };
 
@@ -244,6 +284,15 @@ const PODetails: React.FC = () => {
               Amend PO
             </button>
           )}
+
+          <button
+            onClick={handleGeneratePDF}
+            disabled={generating}
+            className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-xl transition-all shadow-sm"
+          >
+            {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+            Official PDF
+          </button>
         </div>
       </div>
 

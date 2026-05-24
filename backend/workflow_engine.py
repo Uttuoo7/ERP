@@ -137,6 +137,11 @@ def initialize_workflow(
     # Dynamic Notification Trigger Hook
     trigger_notification_alert(task)
     
+    # SLA Start Timer Hook
+    from .services import sla_engine
+    # The entity_type string can map to the module name directly (e.g. 'PURCHASE_REQUISITION')
+    sla_engine.start_timer(db, entity_type=module, entity_id=entity_id)
+    
     return instance
 
 def action_task(
@@ -231,6 +236,9 @@ def finalize_entity_approval(module: str, entity_id: uuid.UUID, db: Session):
     """
     Generic callback that updates the status of the target ERP entity (e.g. PO, SO, PR) to APPROVED.
     """
+    from .services import sla_engine
+    sla_engine.resolve_timer(db, entity_type=module, entity_id=entity_id)
+    
     if module == "PURCHASE_ORDER":
         po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == entity_id).first()
         if po:
@@ -248,6 +256,9 @@ def finalize_entity_approval(module: str, entity_id: uuid.UUID, db: Session):
             logger.info(f"Purchase Requisition {entity_id} status updated to APPROVED.")
 
 def finalize_entity_rejection(module: str, entity_id: uuid.UUID, db: Session):
+    from .services import sla_engine
+    sla_engine.resolve_timer(db, entity_type=module, entity_id=entity_id)
+    
     if module == "PURCHASE_ORDER":
         po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == entity_id).first()
         if po:

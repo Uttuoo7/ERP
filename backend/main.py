@@ -23,6 +23,7 @@ from .attachment_router import router as attachment_router
 import os
 from .auth_router import router as auth_router, seed_users
 from .analytics_router import router as analytics_router
+from .document_router import router as document_router
 from . import database
 
 os.makedirs('uploads', exist_ok=True)
@@ -39,7 +40,20 @@ if not os.getenv("TESTING"):
     except Exception as e:
         logger.warning(f"Seeding failed (may be benign on restart): {e}")
 
-app = FastAPI(title="P2P ERP API")
+from contextlib import asynccontextmanager
+from .websocket_manager import manager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Connecting to Redis Pub/Sub for WebSockets...")
+    await manager.connect_redis()
+    yield
+    # Shutdown
+    if manager.listen_task:
+        manager.listen_task.cancel()
+
+app = FastAPI(title="P2P ERP API", lifespan=lifespan)
 
 # Setup Rate Limiting
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -118,6 +132,9 @@ app.add_middleware(
 from .core.middleware.tenant_middleware import TenantMiddleware
 app.add_middleware(TenantMiddleware)
 
+from .middleware.apm_middleware import APMMiddleware
+app.add_middleware(APMMiddleware)
+
 @app.get("/api/health", tags=["Health"])
 def health_check():
     return {"status": "ok", "message": "ERP Backend is running smoothly."}
@@ -173,6 +190,24 @@ app.include_router(invoice_router, prefix="/api/invoices", tags=["Invoices"])
 app.include_router(warehouse_router, prefix="/api/warehouses", tags=["Warehouses"])
 app.include_router(attachment_router, prefix="/api/attachments", tags=["Attachments"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(document_router, prefix="/api/documents", tags=["documents"])
+from .integration_router import router as integration_router_instance
+app.include_router(integration_router_instance, prefix="/api/integrations", tags=["Integrations"])
+
+from .tally_mapping_router import router as tally_mapping_router
+app.include_router(tally_mapping_router, prefix="/api/tally-mappings", tags=["Tally Mappings"])
+
+from .tally_reconciliation_router import router as tally_reconciliation_router
+app.include_router(tally_reconciliation_router, prefix="/api/tally-reconciliation", tags=["Tally Reconciliation"])
+
+from .import_router import router as import_router
+app.include_router(import_router, prefix="/api/import", tags=["Data Import System"])
+
+from .sla_router import router as sla_router
+app.include_router(sla_router, prefix="/api/sla", tags=["SLA & Escalations"])
+
+from .observability_router import router as observability_router
+app.include_router(observability_router, prefix="/api/observability", tags=["System Observability"])
 
 from .inventory_router import router as inventory_router
 app.include_router(inventory_router, prefix="/api/inventory", tags=["Inventory Ledger & Balances"])
@@ -191,6 +226,20 @@ app.include_router(notification_router, prefix="/api/notifications", tags=["In-A
 
 from .reporting_router import router as reporting_router
 app.include_router(reporting_router, prefix="/api/reports", tags=["Analytical CSV Reports Engine"])
+
+from fastapi import WebSocket, WebSocketDisconnect
+
+@app.websocket("/api/ws")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            # We don't necessarily expect clients to send data, but we must await
+            data = await websocket.receive_text()
+            if data == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, user_id)
 
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

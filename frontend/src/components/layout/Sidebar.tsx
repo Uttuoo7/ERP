@@ -64,7 +64,21 @@ export function Sidebar() {
             <div className="space-y-0.5">
               <SidebarLink to="/masters">Master Data Engine</SidebarLink>
               <SidebarLink to="/workflows/builder">Workflows Setup</SidebarLink>
+              <SidebarLink to="/sla/builder">SLA Automation Builder</SidebarLink>
+              <SidebarLink to="/sla/escalations">Escalation Console</SidebarLink>
               <SidebarLink to="/rbac/matrix">RBAC Roles Matrix</SidebarLink>
+              <SidebarLink to="/integrations">Enterprise Integrations</SidebarLink>
+              <SidebarLink to="/data-migration/wizard">Data Migration Wizard</SidebarLink>
+              <SidebarLink to="/data-migration/history">Import Audit Logs</SidebarLink>
+            </div>
+          </div>
+          
+          <div className="pt-2">
+            <h3 className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Observability</h3>
+            <div className="space-y-0.5">
+              <SidebarLink to="/observability/health">System Health</SidebarLink>
+              <SidebarLink to="/observability/queues">Queue Monitor</SidebarLink>
+              <SidebarLink to="/observability/api-errors">Error Analytics</SidebarLink>
             </div>
           </div>
         )}
@@ -102,7 +116,9 @@ export function Sidebar() {
               <SidebarLink to="/invoices">Vendor Invoices</SidebarLink>
               <SidebarLink to="/finance/liabilities">Accrued Liabilities</SidebarLink>
               <SidebarLink to="/finance/ledger">G/L Postings Explorer</SidebarLink>
-              <SidebarLink to="/finance/tally">Tally ERP Exporters</SidebarLink>
+              <SidebarLink to="/finance/tally">Tally ERP Queue</SidebarLink>
+              <SidebarLink to="/finance/tally/mapping">Tally Ledger Mapping</SidebarLink>
+              <SidebarLink to="/finance/tally/reconciliation">Tally Reconciliation</SidebarLink>
             </div>
           </div>
         )}

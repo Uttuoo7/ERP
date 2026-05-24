@@ -45,6 +45,19 @@ const LedgerExplorer = lazy(() => import('./pages/LedgerExplorer'));
 const TallySyncQueue = lazy(() => import('./pages/TallySyncQueue'));
 const RBACMatrixManager = lazy(() => import('./pages/RBACMatrixManager'));
 const NotificationCenter = lazy(() => import('./pages/NotificationCenter'));
+const SmartInvoiceIngestion = lazy(() => import('./pages/SmartInvoiceIngestion'));
+const VendorIntelligence = lazy(() => import('./pages/VendorIntelligence'));
+const IntegrationHub = lazy(() => import('./pages/IntegrationHub'));
+const TallyMappingUI = lazy(() => import('./pages/TallyMappingUI'));
+const TallyReconciliationConsole = lazy(() => import('./pages/TallyReconciliationConsole'));
+const DataMigrationWizard = lazy(() => import('./pages/DataMigrationWizard'));
+const ImportHistoryDashboard = lazy(() => import('./pages/ImportHistoryDashboard'));
+const SLAAutomationBuilder = lazy(() => import('./pages/SLAAutomationBuilder'));
+const EscalationConsole = lazy(() => import('./pages/EscalationConsole'));
+
+const SystemHealthDashboard = lazy(() => import('./pages/SystemHealthDashboard'));
+const QueueMonitoringConsole = lazy(() => import('./pages/QueueMonitoringConsole'));
+const ErrorAnalyticsDashboard = lazy(() => import('./pages/ErrorAnalyticsDashboard'));
 
 function ProtectedRoute({ children }: { children: JSX.Element }) {
   const isAuthenticated = useAuthStore(state => state.isAuthenticated);
@@ -70,6 +83,15 @@ function App() {
               {/* Dynamic RBAC matrix paths */}
               <Route path="/rbac/matrix" element={<ProtectedRoute><MainLayout><RBACMatrixManager /></MainLayout></ProtectedRoute>} />
               <Route path="/notifications" element={<ProtectedRoute><MainLayout><NotificationCenter /></MainLayout></ProtectedRoute>} />
+              <Route path="/sla/builder" element={<ProtectedRoute><MainLayout><SLAAutomationBuilder /></MainLayout></ProtectedRoute>} />
+              <Route path="/sla/escalations" element={<ProtectedRoute><MainLayout><EscalationConsole /></MainLayout></ProtectedRoute>} />
+              
+              <Route path="/observability/health" element={<ProtectedRoute><MainLayout><SystemHealthDashboard /></MainLayout></ProtectedRoute>} />
+              <Route path="/observability/queues" element={<ProtectedRoute><MainLayout><QueueMonitoringConsole /></MainLayout></ProtectedRoute>} />
+              <Route path="/observability/api-errors" element={<ProtectedRoute><MainLayout><ErrorAnalyticsDashboard /></MainLayout></ProtectedRoute>} />
+              
+              <Route path="/data-migration/wizard" element={<ProtectedRoute><MainLayout><DataMigrationWizard /></MainLayout></ProtectedRoute>} />
+              <Route path="/data-migration/history" element={<ProtectedRoute><MainLayout><ImportHistoryDashboard /></MainLayout></ProtectedRoute>} />
 
               <Route path="/requisitions" element={<ProtectedRoute><MainLayout><PRList /></MainLayout></ProtectedRoute>} />
               <Route path="/requisitions/new" element={<ProtectedRoute><MainLayout><PRForm /></MainLayout></ProtectedRoute>} />
@@ -86,6 +108,7 @@ function App() {
               <Route path="/sales-orders/:id" element={<ProtectedRoute><MainLayout><SODetails /></MainLayout></ProtectedRoute>} />
               
               <Route path="/vendors" element={<ProtectedRoute><MainLayout><VendorList /></MainLayout></ProtectedRoute>} />
+              <Route path="/vendors/intelligence" element={<ProtectedRoute><MainLayout><VendorIntelligence /></MainLayout></ProtectedRoute>} />
               <Route path="/items" element={<ProtectedRoute><MainLayout><ItemCatalog /></MainLayout></ProtectedRoute>} />
               
               <Route path="/pos" element={<ProtectedRoute><MainLayout><POList /></MainLayout></ProtectedRoute>} />
@@ -100,11 +123,15 @@ function App() {
               
               <Route path="/invoices" element={<ProtectedRoute><MainLayout><InvoiceDashboard /></MainLayout></ProtectedRoute>} />
               <Route path="/invoices/new" element={<ProtectedRoute><MainLayout><InvoiceEntryWorkspace /></MainLayout></ProtectedRoute>} />
+              <Route path="/invoices/smart-ingestion" element={<ProtectedRoute><MainLayout><SmartInvoiceIngestion /></MainLayout></ProtectedRoute>} />
               <Route path="/invoices/:id" element={<ProtectedRoute><MainLayout><InvoiceDetailWorkspace /></MainLayout></ProtectedRoute>} />
               
               <Route path="/finance/liabilities" element={<ProtectedRoute><MainLayout><APLiabilityDashboard /></MainLayout></ProtectedRoute>} />
               <Route path="/finance/ledger" element={<ProtectedRoute><MainLayout><LedgerExplorer /></MainLayout></ProtectedRoute>} />
               <Route path="/finance/tally" element={<ProtectedRoute><MainLayout><TallySyncQueue /></MainLayout></ProtectedRoute>} />
+              <Route path="/finance/tally/mapping" element={<ProtectedRoute><MainLayout><TallyMappingUI /></MainLayout></ProtectedRoute>} />
+              <Route path="/finance/tally/reconciliation" element={<ProtectedRoute><MainLayout><TallyReconciliationConsole /></MainLayout></ProtectedRoute>} />
+              <Route path="/integrations" element={<ProtectedRoute><MainLayout><IntegrationHub /></MainLayout></ProtectedRoute>} />
               
               <Route path="/inventory" element={<ProtectedRoute><MainLayout><WarehouseDashboard /></MainLayout></ProtectedRoute>} />
               <Route path="/inventory/ledger" element={<ProtectedRoute><MainLayout><StockLedgerList /></MainLayout></ProtectedRoute>} />

@@ -1,9 +1,10 @@
 import uuid
 import logging
 from typing import List, Dict, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 from . import models, schemas, database, dependencies, matching_engine, finance_engine, event_dispatcher
+from .tasks.ocr_tasks import process_invoice_ocr
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -183,3 +184,55 @@ def post_invoice_voucher_manually_api(
     except Exception as e:
         logger.error(f"Post ledger manually error: {str(e)}")
         raise HTTPException(status_code=500, detail="General Ledger accounting post failed.")
+
+@router.post("/ocr/upload")
+async def upload_invoice_for_ocr(
+    file: UploadFile = File(...),
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """
+    Ingests a raw PDF/Image and drops it into the async AI OCR pipeline.
+    """
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+        
+    # In production, save file to S3 or local storage. Here we just mock it.
+    file_path = f"uploads/mock_ocr_{file.filename}"
+    
+    queue_item = models.OCRProcessingQueue(
+        file_name=file.filename,
+        file_path=file_path,
+        uploaded_by_id=current_user.id,
+        status="QUEUED"
+    )
+    db.add(queue_item)
+    db.commit()
+    db.refresh(queue_item)
+    
+    # Fire background Celery Task
+    process_invoice_ocr.delay(str(queue_item.id))
+    
+    return {
+        "message": "File ingested successfully. Processing started.",
+        "queue_id": str(queue_item.id),
+        "status": "QUEUED"
+    }
+
+@router.get("/ocr/queue/{queue_id}")
+def get_ocr_queue_status(
+    queue_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    item = db.query(models.OCRProcessingQueue).filter(models.OCRProcessingQueue.id == queue_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Queue item not found")
+        
+    return {
+        "id": str(item.id),
+        "status": item.status,
+        "file_name": item.file_name,
+        "invoice_id": str(item.invoice_id) if item.invoice_id else None,
+        "error_log": item.error_log
+    }

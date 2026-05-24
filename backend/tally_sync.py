@@ -41,9 +41,18 @@ def enqueue_transaction(db: Session, transaction_id: uuid.UUID) -> models.TallyS
 
 def generate_tally_voucher_xml(transaction: models.FinancialTransaction) -> str:
     """
-    Generates Tally XML schema representing Journal / Payment Accounting Vouchers.
+    Generates Tally XML schema representing various Accounting Vouchers.
     """
-    vch_type = "Journal" if transaction.transaction_type == "AP_INVOICE" else "Payment"
+    vch_type_mapping = {
+        "AP_INVOICE": "Journal",
+        "PAYMENT": "Payment",
+        "DEBIT_NOTE": "Debit Note",
+        "CREDIT_NOTE": "Credit Note",
+        "TAX_ENTRY": "Journal",
+        "RECEIPT": "Receipt",
+        "JOURNAL": "Journal"
+    }
+    vch_type = vch_type_mapping.get(transaction.transaction_type, "Journal")
     date_str = transaction.transaction_date.strftime("%Y%m%d")
 
     # Start compilation XML Envelope structure
@@ -123,6 +132,12 @@ def process_sync_queue(db: Session) -> Dict[str, Any]:
         item.retry_count += 1
         
         try:
+            if item.retry_count >= 3:
+                item.sync_status = "DEAD_LETTER"
+                item.error_message = "Max retries exceeded for Tally sync."
+                failed_count += 1
+                continue
+
             # Operational baseline Tally synchronizer simulation logic
             # TallyPrime local gateway port is typically http://localhost:9000/
             logger.info(f"Tally Sync: Exporting XML payload for {item.financial_transaction.transaction_number}")
