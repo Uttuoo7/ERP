@@ -1,8 +1,10 @@
 import logging
+import asyncio
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from .. import models
 from . import notification_engine
+from .activity_engine import ActivityEngine
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,22 @@ def fire_alert(db: Session, alert_type: str, severity: str, message: str):
     db.add(alert)
     db.commit()
     logger.warning(f"SYSTEM ALERT: [{severity}] {alert_type} - {message}")
+    
+    # Broadcast to Live Global Activity Feed
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(
+            ActivityEngine.log_and_broadcast(
+                db=db,
+                entity_type="SYSTEM_ALERT",
+                action=alert_type,
+                description=message,
+                severity=severity
+            )
+        )
+    except RuntimeError:
+        # If no running loop, run it synchronously if possible, or just skip broadcast
+        pass
     
     # In a real app, notify DevOps via Slack or Email
     # notification_engine.send_email(to="devops@company.com", subject=f"ERP Alert: {alert_type}", body=message)

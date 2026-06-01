@@ -4,7 +4,7 @@ import {
   FileText, ShieldCheck, Loader2, Landmark, Plus, Trash2, ArrowLeft, Layers, Calendar, Landmark as Bank
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { createInvoice, getPOs, getPO, getGRNs, getGRN } from '../api';
+import { createInvoice, getPOs, getPO, getGRNs, getGRN } from "../api";
 
 const InvoiceEntryWorkspace: React.FC = () => {
   const navigate = useNavigate();

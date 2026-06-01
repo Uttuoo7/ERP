@@ -1,74 +1,40 @@
-from backend.celery_app import celery_app
-import logging
-import hashlib
+from celery import shared_task
+from sqlalchemy.orm import Session
 from ..database import SessionLocal
-from .. import models, event_dispatcher
-from ..services.pdf_generator import generate_purchase_order_pdf
-from ..services.storage_service import upload_to_storage
+from ..services.document_engine import DocumentEngine
+import logging
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task
-def async_generate_document(document_type: str, reference_id: str, user_id: str):
+@shared_task
+def async_generate_po_document(po_id: str, user_id: str = None):
     """
-    Background worker that generates a PDF, uploads to S3, and saves metadata.
+    Background worker task to generate the PO document after it gets approved.
+    Prevents blocking the UI when compiling the PDF/HTML.
     """
-    logger.info(f"Starting async document generation for {document_type} - {reference_id}")
-    db = SessionLocal()
+    db: Session = SessionLocal()
     try:
-        # Generate the raw bytes
-        if document_type == "PURCHASE_ORDER":
-            pdf_bytes = generate_purchase_order_pdf(db, reference_id)
-            file_name = f"PO_{reference_id[:8]}.pdf"
-        else:
-            raise ValueError(f"Unsupported document type: {document_type}")
-            
-        # Upload to Storage Vault (S3 simulation)
-        s3_key = upload_to_storage(pdf_bytes, document_type, reference_id)
-        
-        # Calculate secure hash
-        file_hash = hashlib.sha256(pdf_bytes).hexdigest()
-        
-        # Save to database
-        doc = models.EnterpriseDocument(
-            document_type=document_type,
-            reference_id=reference_id,
-            file_name=file_name,
-            s3_key=s3_key,
-            file_size_bytes=len(pdf_bytes),
-            file_hash=file_hash,
-            is_signed=True,
-            created_by_id=user_id
-        )
-        db.add(doc)
-        db.commit()
-        db.refresh(doc)
-        
-        # Dispatch WebSocket event to notify the frontend
-        event_dispatcher.dispatch(
-            "document_ready",
-            {
-                "document_id": str(doc.id),
-                "document_type": document_type,
-                "reference_id": reference_id,
-                "message": f"{file_name} is ready for download."
-            },
-            db
-        )
-        
-        logger.info(f"Successfully generated and stored document {doc.id}")
-        
+        logger.info(f"Starting async document generation for PO: {po_id}")
+        DocumentEngine.generate_purchase_order_document(db, po_id, generated_by_id=user_id)
+        logger.info(f"Successfully generated document for PO: {po_id}")
     except Exception as e:
-        logger.error(f"Failed to generate document: {e}")
+        logger.error(f"Failed to generate PO document: {e}")
         db.rollback()
-        event_dispatcher.dispatch(
-            "document_failed",
-            {
-                "document_type": document_type,
-                "reference_id": reference_id,
-                "error": str(e)
-            },
-            db
-        )
+    finally:
+        db.close()
+
+@shared_task
+def scheduled_generate_executive_digest():
+    """
+    Cron-scheduled task to generate daily executive digest.
+    """
+    db: Session = SessionLocal()
+    try:
+        logger.info("Starting daily executive digest generation")
+        DocumentEngine.generate_executive_digest(db)
+        logger.info("Successfully generated executive digest")
+    except Exception as e:
+        logger.error(f"Failed to generate executive digest: {e}")
+        db.rollback()
     finally:
         db.close()

@@ -29,7 +29,7 @@ def create_invoice(
     subtotal = sum(item.quantity_billed * item.unit_price for item in payload.billed_items)
     tax_total = sum(item.tax_amount for item in payload.billed_items)
     discount_total = sum(item.discount_amount for item in payload.billed_items)
-    total_amount = subtotal + tax_total - discount_total
+    total_amount = subtotal + max(tax_total, payload.gst_amount or 0) - discount_total
 
     # Create Invoice Header
     invoice = models.Invoice(
@@ -38,11 +38,8 @@ def create_invoice(
         grn_id=payload.grn_id,
         invoice_number=payload.invoice_number,
         vendor_invoice_number=payload.vendor_invoice_number,
-        invoice_date=payload.invoice_date or datetime.utcnow() if 'datetime' in globals() else models.datetime.utcnow() if hasattr(models, 'datetime') else models.datetime.utcnow(),
-        due_date=models.datetime.utcnow() + models.timedelta(days=30) if hasattr(models, 'timedelta') else models.datetime.utcnow() + models.datetime.timedelta(days=30) if hasattr(models, 'datetime') else None,
         total_amount=total_amount,
         gst_amount=payload.gst_amount,
-        tds_deducted=payload.tds_deducted,
         discount_amount=payload.discount_amount or discount_total,
         status=models.InvoiceStatus.DRAFT,
         workflow_state="DRAFT",
@@ -51,7 +48,7 @@ def create_invoice(
     
     # Check for datetime library compatibility safely
     from datetime import datetime, timedelta
-    invoice.invoice_date = payload.invoice_date or datetime.utcnow()
+    invoice.invoice_date = getattr(payload, "invoice_date", None) or datetime.utcnow()
     invoice.due_date = datetime.utcnow() + timedelta(days=30)
 
     db.add(invoice)
@@ -66,6 +63,9 @@ def create_invoice(
         # Update PO line billed balance
         po_line.quantity_billed += item.quantity_billed
 
+        from decimal import Decimal
+        total_line_price = Decimal(str(item.quantity_billed)) * Decimal(str(item.unit_price)) + Decimal(str(item.tax_amount)) - Decimal(str(item.discount_amount))
+        
         inv_line = models.InvoiceLineItem(
             invoice_id=invoice.id,
             po_line_item_id=item.po_line_item_id,
@@ -74,13 +74,10 @@ def create_invoice(
             unit_price=item.unit_price,
             tax_amount=item.tax_amount,
             discount_amount=item.discount_amount,
-            variance_amount=Decimal("0.0") if 'Decimal' in globals() else models.Decimal("0.0") if hasattr(models, 'Decimal') else 0.0,
+            total_price=total_line_price,
+            variance_amount=Decimal("0.0"),
             match_status="PENDING_MATCHING"
         )
-        
-        # Safe decimal setup
-        from decimal import Decimal
-        inv_line.variance_amount = Decimal("0.0")
 
         db.add(inv_line)
 

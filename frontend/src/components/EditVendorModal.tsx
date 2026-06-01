@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { updateVendor } from '../api';
+import { updateVendor } from "../api";
 
 export default function EditVendorModal({ vendor, onClose, onSuccess }: { vendor: any, onClose: () => void, onSuccess: () => void }) {
   const [formData, setFormData] = useState({

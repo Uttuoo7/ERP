@@ -45,15 +45,23 @@ def create_rfq_from_pr(
         pr_id = pr_lines[0].pr_id
         
         # 2. Sequence RFQ number
+        prefix = ""
+        category_id = pr_lines[0].requisition.category_id
+        if category_id:
+            cat = db.query(models.ProcurementCategory).filter(models.ProcurementCategory.id == category_id).first()
+            if cat and cat.prefix:
+                prefix = f"{cat.prefix}-"
+
         year = datetime.utcnow().year
         count = db.query(models.RequestForQuotation).count()
-        rfq_number = f"RFQ-{year}-{count + 1:04d}"
+        rfq_number = f"{prefix}RFQ-{year}-{count + 1:04d}"
         
         # 3. Create RFQ Header
         rfq = models.RequestForQuotation(
             rfq_number=rfq_number,
             buyer_id=current_user.id,
             department_id=pr_lines[0].requisition.department_id,
+            category_id=category_id,
             due_date=due_date,
             currency=payload.get("currency", "INR"),
             payment_terms=payload.get("payment_terms"),

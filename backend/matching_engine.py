@@ -3,7 +3,7 @@ import logging
 from decimal import Decimal
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
-from . import models, event_dispatcher
+from . import models, event_dispatcher, commitment_engine
 
 logger = logging.getLogger(__name__)
 
@@ -39,10 +39,10 @@ def run_three_way_match(db: Session, invoice_id: uuid.UUID) -> models.Invoice:
         if inv_line.grn_line_item_id:
             grn_line = db.query(models.GRNLineItem).filter(models.GRNLineItem.id == inv_line.grn_line_item_id).first()
             if grn_line:
-                grn_accepted = grn_line.quantity_accepted
+                grn_accepted = getattr(grn_line, "accepted_qty", getattr(grn_line, "quantity_accepted", 0))
         else:
             # Fallback: sum all GRN accepted lines corresponding to this PO line
-            grn_accepted = sum(g.quantity_accepted for g in po_line.grn_line_items)
+            grn_accepted = sum(getattr(g, "accepted_qty", getattr(g, "quantity_accepted", 0)) for g in po_line.grn_line_items)
 
         # 1. Price Verification
         price_diff = inv_line.unit_price - po_line.unit_price
@@ -77,6 +77,18 @@ def run_three_way_match(db: Session, invoice_id: uuid.UUID) -> models.Invoice:
         )
     else:
         invoice.status = models.InvoiceStatus.MATCHED
+        
+        # Transition Accrued to Actual
+        po = invoice.purchase_order
+        if po:
+            budget_context = {
+                "department_id": po.department_id,
+                "category_id": po.category_id,
+                "project_id": None,
+                "cost_center_id": None
+            }
+            commitment_engine.transition_accrued_to_actual(db, float(invoice.total_amount), budget_context, "INV", invoice.id)
+
         # Emit matched event
         event_dispatcher.dispatch(
             "invoice_matched",

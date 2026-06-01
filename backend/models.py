@@ -4,7 +4,8 @@ from decimal import Decimal
 from typing import List, Optional
 import enum
 
-from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, Enum
+from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, Enum, Text, Float
+from sqlalchemy.sql import func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -60,6 +61,59 @@ class User(Base):
     role: Mapped[Role] = mapped_column(Enum(Role), default=Role.BUYER)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    company_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("companies.id"), nullable=True)
+    branch_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("branches.id"), nullable=True)
+    vendor_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("vendors.id"), nullable=True)
+
+class Tenant(Base):
+    __tablename__ = "tenants"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    domain: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    subscription_plan: Mapped[str] = mapped_column(String(50), default="STARTER")
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    companies: Mapped[List["Company"]] = relationship("Company", back_populates="tenant", cascade="all, delete-orphan")
+    config: Mapped["TenantConfig"] = relationship("TenantConfig", back_populates="tenant", uselist=False, cascade="all, delete-orphan")
+
+class TenantConfig(Base):
+    __tablename__ = "tenant_configs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_uuid: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"), unique=True)
+    logo_url: Mapped[Optional[str]] = mapped_column(String(500))
+    theme_color: Mapped[str] = mapped_column(String(20), default="#4f46e5")
+    modules_enabled_json: Mapped[str] = mapped_column(String, default='["PROCUREMENT","INVENTORY"]')
+    
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="config")
+
+class Company(Base):
+    __tablename__ = "companies"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_uuid: Mapped[uuid.UUID] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    registration_number: Mapped[Optional[str]] = mapped_column(String(100))
+    tax_id: Mapped[Optional[str]] = mapped_column(String(100))
+    base_currency: Mapped[str] = mapped_column(String(10), default="USD")
+    
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="companies")
+    branches: Mapped[List["Branch"]] = relationship("Branch", back_populates="company", cascade="all, delete-orphan")
+
+class Branch(Base):
+    __tablename__ = "branches"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    company_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("companies.id"))
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    address: Mapped[Optional[str]] = mapped_column(String(500))
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    country: Mapped[Optional[str]] = mapped_column(String(100))
+    is_headquarters: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    company: Mapped["Company"] = relationship("Company", back_populates="branches")
 
 class BaseMaster(Base):
     __abstract__ = True
@@ -71,17 +125,37 @@ class BaseMaster(Base):
     updated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
+class ProcurementCategory(BaseMaster):
+    __tablename__ = "procurement_categories"
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    prefix: Mapped[str] = mapped_column(String(20))
+    description: Mapped[Optional[str]] = mapped_column(String(500))
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("procurement_categories.id"), nullable=True)
+    icon: Mapped[Optional[str]] = mapped_column(String(50))
+    color: Mapped[Optional[str]] = mapped_column(String(20))
+    default_department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    default_warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    workflow_definition_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("workflow_definitions.id"), nullable=True)
+    
+    parent: Mapped[Optional["ProcurementCategory"]] = relationship("ProcurementCategory", remote_side="ProcurementCategory.id")
+    department: Mapped[Optional["Department"]] = relationship()
+    warehouse: Mapped[Optional["Warehouse"]] = relationship()
+    workflow_definition: Mapped[Optional["WorkflowDefinition"]] = relationship()
+
 class Department(BaseMaster):
     __tablename__ = "departments"
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
     manager_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    default_cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("cost_centers.id"), nullable=True)
 
 class CostCenter(BaseMaster):
     __tablename__ = "cost_centers"
     code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100), index=True)
     description: Mapped[Optional[str]] = mapped_column(String(255))
+    parent_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("cost_centers.id"), nullable=True)
 
 class Project(BaseMaster):
     __tablename__ = "projects"
@@ -103,13 +177,27 @@ class Employee(BaseMaster):
 
 class Customer(BaseMaster):
     __tablename__ = "customers"
-    customer_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    name: Mapped[str] = mapped_column(String(100), index=True)
-    email: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    phone: Mapped[Optional[str]] = mapped_column(String(20))
+    
+    customer_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    company_name: Mapped[str] = mapped_column(String(100), index=True)
     gstin: Mapped[Optional[str]] = mapped_column(String(15), unique=True, nullable=True)
-    pan: Mapped[Optional[str]] = mapped_column(String(10), unique=True, nullable=True)
-
+    pan_number: Mapped[Optional[str]] = mapped_column(String(10), unique=True, nullable=True)
+    billing_address: Mapped[Optional[str]] = mapped_column(Text)
+    shipping_address: Mapped[Optional[str]] = mapped_column(Text)
+    state: Mapped[Optional[str]] = mapped_column(String(50))
+    country: Mapped[str] = mapped_column(String(50), default="India")
+    contact_person: Mapped[Optional[str]] = mapped_column(String(100))
+    contact_email: Mapped[Optional[str]] = mapped_column(String(100))
+    contact_number: Mapped[Optional[str]] = mapped_column(String(20))
+    credit_limit: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    payment_terms: Mapped[Optional[str]] = mapped_column(String(100))
+    customer_type: Mapped[str] = mapped_column(String(50), default="RETAIL")
+    
+    # Relationships
+    quotations = relationship("SalesQuotation", back_populates="customer")
+    sales_orders = relationship("SalesOrder", back_populates="customer")
+    receivables = relationship("AccountsReceivable", back_populates="customer")
+    ledger_entries = relationship("CustomerLedger", back_populates="customer")
 class Vendor(BaseMaster):
     __tablename__ = "vendors"
 
@@ -122,44 +210,100 @@ class Vendor(BaseMaster):
     is_msme: Mapped[bool] = mapped_column(Boolean, default=False)
     ifsc_code: Mapped[Optional[str]] = mapped_column(String(20))
 
-    items: Mapped[List["Item"]] = relationship(back_populates="default_vendor")
+    items: Mapped[List["Item"]] = relationship(back_populates="default_vendor", foreign_keys="[Item.default_vendor_id]")
     purchase_orders: Mapped[List["PurchaseOrder"]] = relationship(back_populates="vendor")
     invoices: Mapped[List["Invoice"]] = relationship(back_populates="vendor")
+    commercial_profile: Mapped[Optional["VendorCommercialProfile"]] = relationship(back_populates="vendor", uselist=False)
+
+class CommercialTermsTemplate(Base):
+    __tablename__ = "commercial_terms_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
+    payment_terms: Mapped[str] = mapped_column(String(200))
+    freight_terms: Mapped[str] = mapped_column(String(200))
+    delivery_terms: Mapped[str] = mapped_column(String(200))
+    warranty_clauses: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    insurance_clauses: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    penalty_clauses: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    validity_clauses: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dispatch_instructions: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+class VendorCommercialProfile(Base):
+    __tablename__ = "vendor_commercial_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("vendors.id"), unique=True)
+    
+    account_number: Mapped[Optional[str]] = mapped_column(String(50))
+    branch_name: Mapped[Optional[str]] = mapped_column(String(100))
+    upi_id: Mapped[Optional[str]] = mapped_column(String(100))
+    swift_code: Mapped[Optional[str]] = mapped_column(String(20))
+    freight_preferences: Mapped[Optional[str]] = mapped_column(String(200))
+    delivery_terms: Mapped[Optional[str]] = mapped_column(String(200))
+    default_commercial_terms_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("commercial_terms_templates.id"), nullable=True)
+    state_code: Mapped[Optional[str]] = mapped_column(String(10)) # For Intra/Inter-state GST
+    
+    vendor: Mapped["Vendor"] = relationship(back_populates="commercial_profile")
+    default_terms: Mapped[Optional["CommercialTermsTemplate"]] = relationship()
 
 class Warehouse(BaseMaster):
     __tablename__ = "warehouses"
 
+    warehouse_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
-    contact_name: Mapped[str] = mapped_column(String(100))
-    company_name: Mapped[str] = mapped_column(String(100))
-    address_line1: Mapped[str] = mapped_column(String(255))
-    address_line2: Mapped[str] = mapped_column(String(255))
+    contact_person: Mapped[Optional[str]] = mapped_column(String(100))
+    contact_number: Mapped[Optional[str]] = mapped_column(String(50))
+    company_name: Mapped[Optional[str]] = mapped_column(String(100))
+    address_line1: Mapped[Optional[str]] = mapped_column(String(255))
+    address_line2: Mapped[Optional[str]] = mapped_column(String(255))
     landmark: Mapped[Optional[str]] = mapped_column(String(100))
-    city: Mapped[str] = mapped_column(String(100))
-    state: Mapped[str] = mapped_column(String(100))
-    pin_code: Mapped[str] = mapped_column(String(20))
-    phone: Mapped[str] = mapped_column(String(50))
+    city: Mapped[Optional[str]] = mapped_column(String(100))
+    state: Mapped[Optional[str]] = mapped_column(String(100))
+    pin_code: Mapped[Optional[str]] = mapped_column(String(20))
+    phone: Mapped[Optional[str]] = mapped_column(String(50))
     gstin: Mapped[Optional[str]] = mapped_column(String(20))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 class Item(BaseMaster):
     __tablename__ = "items"
 
-    sku: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    sku: Mapped[str] = mapped_column(String(50), unique=True, index=True) # Also referred as item_code
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[Optional[str]] = mapped_column(String(255))
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    standard_rate: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.0)
     default_vendor_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("vendors.id"))
+    preferred_vendor_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("vendors.id"), nullable=True)
     hsn_code: Mapped[Optional[str]] = mapped_column(String(10))
     category: Mapped[str] = mapped_column(String(50), default="Raw Component")
+    subcategory: Mapped[Optional[str]] = mapped_column(String(50))
     uom: Mapped[str] = mapped_column(String(20), default="Nos")
     gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=18.00)
     mpn: Mapped[Optional[str]] = mapped_column(String(100))
     oem: Mapped[Optional[str]] = mapped_column(String(100))
     footprint: Mapped[Optional[str]] = mapped_column(String(50))
     bin_location: Mapped[Optional[str]] = mapped_column(String(50))
+    
+    reorder_level: Mapped[int] = mapped_column(Integer, default=0)
+    minimum_stock: Mapped[int] = mapped_column(Integer, default=0)
+    maximum_stock: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
 
-    default_vendor: Mapped[Optional["Vendor"]] = relationship(back_populates="items")
-    inventory_ledger: Mapped["InventoryLedger"] = relationship(back_populates="item", uselist=False)
+    default_vendor: Mapped[Optional["Vendor"]] = relationship(back_populates="items", foreign_keys=[default_vendor_id])
+    inventory_ledger: Mapped[Optional["InventoryLedger"]] = relationship(back_populates="item", uselist=False)
+
+class InventoryLedger(Base):
+    __tablename__ = "inventory_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), unique=True)
+    quantity_on_hand: Mapped[int] = mapped_column(Integer, default=0)
+    quantity_reserved: Mapped[int] = mapped_column(Integer, default=0)
+    reorder_point: Mapped[int] = mapped_column(Integer, default=10)
+    last_updated: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    item: Mapped["Item"] = relationship(back_populates="inventory_ledger")
 
 class InventoryTransaction(Base):
     __tablename__ = "inventory_transactions"
@@ -240,16 +384,39 @@ class StockLedgerEntry(Base):
     batch: Mapped[Optional["InventoryBatch"]] = relationship()
     created_by: Mapped[Optional["User"]] = relationship()
 
-class InventoryLedger(Base):
-    __tablename__ = "inventory_ledger"
+class InventoryStock(Base):
+    __tablename__ = "inventory_stock"
 
-    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), primary_key=True)
-    quantity_on_hand: Mapped[int] = mapped_column(Integer, default=0)
-    quantity_reserved: Mapped[int] = mapped_column(Integer, default=0)
-    reorder_point: Mapped[int] = mapped_column(Integer, default=0)
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"))
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"))
+    current_stock: Mapped[int] = mapped_column(Integer, default=0)
+    reserved_stock: Mapped[int] = mapped_column(Integer, default=0)
+    available_stock: Mapped[int] = mapped_column(Integer, default=0)
     last_updated: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    item: Mapped["Item"] = relationship(back_populates="inventory_ledger")
+    item: Mapped["Item"] = relationship()
+    warehouse: Mapped["Warehouse"] = relationship()
+
+class StockLedger(Base):
+    __tablename__ = "stock_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"))
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"))
+    transaction_type: Mapped[str] = mapped_column(String(50)) # GRN_RECEIPT, ISSUE, RETURN, ADJUSTMENT, TRANSFER
+    reference_type: Mapped[str] = mapped_column(String(50)) # e.g. 'GRN'
+    reference_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    qty_in: Mapped[int] = mapped_column(Integer, default=0)
+    qty_out: Mapped[int] = mapped_column(Integer, default=0)
+    balance_after: Mapped[int] = mapped_column(Integer, default=0)
+    unit_rate: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    total_value: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    item: Mapped["Item"] = relationship()
+    warehouse: Mapped["Warehouse"] = relationship()
 
 class PurchaseOrder(Base):
     __tablename__ = "purchase_orders"
@@ -262,6 +429,7 @@ class PurchaseOrder(Base):
     department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"), nullable=True)
     project_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("projects.id"), nullable=True)
     cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("cost_centers.id"), nullable=True)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("procurement_categories.id"), nullable=True)
     
     status: Mapped[POStatus] = mapped_column(Enum(POStatus), default=POStatus.DRAFT)
     workflow_state: Mapped[str] = mapped_column(String(50), default="PENDING")
@@ -275,6 +443,12 @@ class PurchaseOrder(Base):
     tax_summary: Mapped[Optional[str]] = mapped_column(String(1000), default="0.0")
     discount_summary: Mapped[Optional[str]] = mapped_column(String(1000), default="0.0")
     total_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    
+    cgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    sgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    igst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    freight_tax: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    commercial_terms_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("commercial_terms_templates.id"), nullable=True)
     
     delivery_type: Mapped[str] = mapped_column(String(50), default="Warehouse")
     warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"))
@@ -315,6 +489,7 @@ class POLineItem(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     taxes: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.0)
     discounts: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=0.0)
+    hsn_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     delivery_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     
     quantity_received: Mapped[int] = mapped_column(Integer, default=0)
@@ -351,12 +526,25 @@ class GoodsReceiptNote(Base):
     vendor_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("vendors.id"), nullable=True)
     warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
     received_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"))
-    vehicle_details: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
-    delivery_challan_number: Mapped[str] = mapped_column(String(100))
+    transporter_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    vehicle_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    invoice_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    eway_bill_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    delivery_challan_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    
     receipt_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    status: Mapped[str] = mapped_column(String(50), default="QC_PENDING") # DRAFT, RECEIVED, QC_PENDING, PARTIALLY_ACCEPTED, FULLY_ACCEPTED, REJECTED, CLOSED
-    workflow_state: Mapped[str] = mapped_column(String(50), default="PENDING")
+    status: Mapped[str] = mapped_column(String(50), default="DRAFT") # DRAFT, PENDING_APPROVAL, APPROVED, RECEIVED, QC_HOLD, PARTIAL, CLOSED, REJECTED
+    
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    cgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    sgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    igst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    
     remarks: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    
+    revision_number: Mapped[int] = mapped_column(Integer, default=0)
+    pdf_snapshot_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     
     # Inspection parameters
     inspected_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
@@ -379,10 +567,15 @@ class GRNLineItem(Base):
     item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"))
     
     quantity_ordered: Mapped[int] = mapped_column(Integer)
-    quantity_received: Mapped[int] = mapped_column(Integer)
-    quantity_accepted: Mapped[int] = mapped_column(Integer, default=0)
-    quantity_rejected: Mapped[int] = mapped_column(Integer, default=0)
-    quantity_damaged: Mapped[int] = mapped_column(Integer, default=0)
+    previously_received_qty: Mapped[int] = mapped_column(Integer, default=0)
+    quantity_received: Mapped[int] = mapped_column(Integer, default=0)
+    accepted_qty: Mapped[int] = mapped_column(Integer, default=0)
+    rejected_qty: Mapped[int] = mapped_column(Integer, default=0)
+    pending_qty: Mapped[int] = mapped_column(Integer, default=0)
+    
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    gst_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0.0)
+    total: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
     remaining_quantity: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
     
     # Lot / Serial parameters
@@ -426,10 +619,17 @@ class Invoice(Base):
     vendor_invoice_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     invoice_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     due_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("procurement_categories.id"), nullable=True)
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     gst_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
-    tds_deducted: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     discount_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    
+    cgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    sgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    igst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    freight_tax: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    commercial_terms_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("commercial_terms_templates.id"), nullable=True)
+
     status: Mapped[InvoiceStatus] = mapped_column(Enum(InvoiceStatus), default=InvoiceStatus.DRAFT)
     workflow_state: Mapped[Optional[str]] = mapped_column(String(100), default="DRAFT")
     remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -442,6 +642,7 @@ class Invoice(Base):
     purchase_order: Mapped["PurchaseOrder"] = relationship("PurchaseOrder", back_populates="invoices")
     vendor: Mapped["Vendor"] = relationship(back_populates="invoices")
     goods_receipt_note: Mapped[Optional["GoodsReceiptNote"]] = relationship()
+    commercial_terms: Mapped[Optional["CommercialTermsTemplate"]] = relationship()
     line_items: Mapped[List["InvoiceLineItem"]] = relationship(back_populates="invoice", cascade="all, delete-orphan")
 
 class InvoiceLineItem(Base):
@@ -455,6 +656,8 @@ class InvoiceLineItem(Base):
     unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     discount_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    total_price: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+    hsn_code: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     variance_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     match_status: Mapped[str] = mapped_column(String(50), default="PENDING_MATCHING")
 
@@ -561,7 +764,8 @@ class WorkflowInstance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    approvals: Mapped[List["ApprovalTask"]] = relationship(back_populates="instance")
+    tasks: Mapped[List["ApprovalTask"]] = relationship(back_populates="instance")
+    history: Mapped[List["WorkflowHistory"]] = relationship("WorkflowHistory", back_populates="instance")
 
 # --- Analytics & Intelligence Models ---
 
@@ -611,6 +815,23 @@ class ProcurementKPI(Base):
     
     ai_insights_json: Mapped[Optional[str]] = mapped_column(String, nullable=True) # Text generation insights
 
+class OperationalRecommendation(Base):
+    __tablename__ = "operational_recommendations"
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    module: Mapped[str] = mapped_column(String(50)) # PROCUREMENT, INVENTORY, FINANCE, WORKFLOW
+    entity_type: Mapped[str] = mapped_column(String(50)) # e.g. VENDOR, ITEM, INVOICE, WORKFLOW_INSTANCE
+    entity_id: Mapped[str] = mapped_column(String(50), nullable=True)
+    
+    severity: Mapped[str] = mapped_column(String(20), default="INFO") # INFO, WARNING, CRITICAL, OPPORTUNITY
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str] = mapped_column(String(1000))
+    action_payload_json: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True) # Data needed to execute the recommended action
+    
+    status: Mapped[str] = mapped_column(String(20), default="ACTIVE") # ACTIVE, RESOLVED, DISMISSED
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
 # --- Enterprise Document Storage ---
 
 class EnterpriseDocument(Base):
@@ -647,7 +868,6 @@ class DocumentAuditLog(Base):
     
     document: Mapped["EnterpriseDocument"] = relationship()
     user: Mapped["User"] = relationship()
-    history: Mapped[List["WorkflowHistory"]] = relationship("WorkflowHistory", back_populates="instance")
 
 # --- Enterprise Integration Ecosystem ---
 
@@ -742,6 +962,7 @@ class PurchaseRequisition(Base):
     cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("cost_centers.id"), nullable=True)
     priority: Mapped[str] = mapped_column(String(20), default="MEDIUM") # LOW, MEDIUM, HIGH, URGENT
     required_date: Mapped[datetime] = mapped_column(DateTime)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("procurement_categories.id"), nullable=True)
     delivery_location_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
     currency: Mapped[str] = mapped_column(String(10), default="INR")
     remarks: Mapped[Optional[str]] = mapped_column(String(500))
@@ -849,6 +1070,7 @@ class RequestForQuotation(Base):
     currency: Mapped[str] = mapped_column(String(10), default="INR")
     payment_terms: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     delivery_terms: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("procurement_categories.id"), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="DRAFT") # DRAFT, SENT, PARTIALLY_RESPONDED, FULLY_RESPONDED, UNDER_EVALUATION, APPROVED, CANCELLED, CLOSED
     workflow_state: Mapped[str] = mapped_column(String(50), default="PENDING")
     remarks: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
@@ -1165,6 +1387,25 @@ class EscalationLog(Base):
     escalation_details: Mapped[str] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+class ActivityEvent(Base):
+    """
+    Global operational activity stream for realtime updates.
+    Tracks everything from PO approvals to SLA breaches.
+    """
+    __tablename__ = "activity_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(50))  # e.g. PURCHASE_ORDER, SYSTEM, INTEGRATION
+    entity_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    action: Mapped[str] = mapped_column(String(100))  # e.g. APPROVED, CREATED, BREACHED
+    severity: Mapped[str] = mapped_column(String(20), default="INFO")  # INFO, WARNING, CRITICAL, SUCCESS
+    actor_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # Who did it (System if None)
+    description: Mapped[str] = mapped_column(String(500))
+    metadata_json: Mapped[Optional[str]] = mapped_column(String(1000), nullable=True)
+    department_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)  # For role-based broadcast filtering
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class ApiRequestLog(Base):
     __tablename__ = "api_request_logs"
 
@@ -1199,4 +1440,752 @@ class SystemAlert(Base):
     resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+# ==========================================
+# BUDGET GOVERNANCE & STRATEGIC SPEND MODELS
+# ==========================================
+
+class BudgetMaster(Base):
+    __tablename__ = "budget_masters"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255))
+    fiscal_year: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(50), default="DRAFT") # DRAFT, ACTIVE, FROZEN, CLOSED
+    total_budget: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("tenants.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    allocations: Mapped[List["BudgetAllocation"]] = relationship("BudgetAllocation", back_populates="budget_master")
+
+class BudgetAllocation(Base):
+    __tablename__ = "budget_allocations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    budget_master_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("budget_masters.id"))
+    
+    # Polymorphic mappings
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("departments.id"), nullable=True)
+    project_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=True)
+    cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("cost_centers.id"), nullable=True)
+    category_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("procurement_categories.id"), nullable=True)
+    branch_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("branches.id"), nullable=True)
+
+    allocated_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    soft_limit_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=80.00)
+    hard_limit_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=100.00)
+    
+    escalate_to_role: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    budget_master: Mapped["BudgetMaster"] = relationship("BudgetMaster", back_populates="allocations")
+    consumption: Mapped["BudgetConsumption"] = relationship("BudgetConsumption", back_populates="allocation", uselist=False)
+
+class BudgetConsumption(Base):
+    __tablename__ = "budget_consumptions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    allocation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("budget_allocations.id"), unique=True)
+    
+    pending_approval_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=0.00) # Planned
+    committed_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=0.00) # PO Approved
+    accrued_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=0.00) # GRN received
+    consumed_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=0.00) # Actual (Invoice Matched)
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2), default=0.00) # Payment
+    
+    last_recalculated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    allocation: Mapped["BudgetAllocation"] = relationship("BudgetAllocation", back_populates="consumption")
+
+class CommitmentLedgerEntry(Base):
+    __tablename__ = "commitment_ledger"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    allocation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("budget_allocations.id"))
+    document_type: Mapped[str] = mapped_column(String(50)) # PR, PO, GRN, INV, PMT
+    document_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    transition_type: Mapped[str] = mapped_column(String(100)) # e.g. PLANNED_TO_COMMITTED
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    allocation: Mapped["BudgetAllocation"] = relationship("BudgetAllocation")
+
+class BudgetAdjustment(Base):
+    __tablename__ = "budget_adjustments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    allocation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("budget_allocations.id"))
+    adjustment_amount: Mapped[Decimal] = mapped_column(Numeric(20, 2))
+    reason: Mapped[str] = mapped_column(Text)
+    adjusted_by_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    allocation: Mapped["BudgetAllocation"] = relationship("BudgetAllocation")
+    adjusted_by: Mapped["User"] = relationship("User")
+
+
+
+# ==========================================
+# ACCOUNTS PAYABLE & VENDOR FINANCE MODELS
+# ==========================================
+
+class TDSConfiguration(Base):
+    __tablename__ = 'tds_configurations'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    section_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    description: Mapped[str] = mapped_column(String(255))
+    percentage: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+    threshold_limit: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class VendorLedger(Base):
+    __tablename__ = 'vendor_ledger'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('vendors.id'), index=True)
+    transaction_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    transaction_type: Mapped[str] = mapped_column(String(50)) # INVOICE, PAYMENT, ADVANCE, CREDIT_NOTE, DEBIT_NOTE, TDS, ADJUSTMENT
+    reference_type: Mapped[str] = mapped_column(String(50)) # e.g. AP_VOUCHER, PAYMENT
+    reference_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    debit_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    credit_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    running_balance: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0) # Positive = We owe vendor (Credit balance)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    vendor: Mapped['Vendor'] = relationship()
+    created_by: Mapped[Optional['User']] = relationship()
+
+class AccountsPayable(Base):
+    __tablename__ = 'accounts_payable'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ap_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('vendors.id'), index=True)
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('invoices.id'), nullable=True)
+    po_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('purchase_orders.id'), nullable=True)
+    grn_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('goods_receipt_notes.id'), nullable=True)
+    
+    invoice_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    gst_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    tds_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    payable_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0) # (invoice + gst) - tds
+    paid_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    balance_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    payment_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, PARTIALLY_PAID, PAID, OVERDUE, ON_HOLD
+    approval_status: Mapped[str] = mapped_column(String(50), default='PENDING_APPROVAL')
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    vendor: Mapped['Vendor'] = relationship()
+    invoice: Mapped[Optional['Invoice']] = relationship()
+    purchase_order: Mapped[Optional['PurchaseOrder']] = relationship()
+    grn: Mapped[Optional['GoodsReceiptNote']] = relationship()
+
+class VendorPayment(Base):
+    __tablename__ = 'vendor_payments'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('vendors.id'), index=True)
+    payment_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    payment_method: Mapped[str] = mapped_column(String(50)) # BANK_TRANSFER, CHEQUE, CASH, RTGS, NEFT, UPI
+    bank_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    account_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    utr_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    cheque_number: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    payment_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    tds_deducted: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    narration: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    approval_status: Mapped[str] = mapped_column(String(50), default='APPROVED') # DRAFT, PENDING_APPROVAL, APPROVED, REJECTED, RELEASED
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    vendor: Mapped['Vendor'] = relationship()
+    created_by: Mapped[Optional['User']] = relationship()
+
+
+class InvoiceMismatch(Base):
+    __tablename__ = 'invoice_mismatches'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('invoices.id'))
+    mismatch_type: Mapped[str] = mapped_column(String(100)) # e.g. QUANTITY, RATE, TAX
+    expected_value: Mapped[str] = mapped_column(String(255))
+    actual_value: Mapped[str] = mapped_column(String(255))
+    variance: Mapped[Decimal] = mapped_column(Numeric(15, 2))
+    severity: Mapped[str] = mapped_column(String(50)) # LOW, MEDIUM, HIGH, CRITICAL
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    invoice: Mapped['Invoice'] = relationship()
+
+class AuditTrail(Base):
+    __tablename__ = 'audit_trail'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entity_type: Mapped[str] = mapped_column(String(100), index=True)
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    action: Mapped[str] = mapped_column(String(50)) # CREATE, UPDATE, DELETE, APPROVE, REJECT
+    old_values: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # JSON string
+    new_values: Mapped[Optional[str]] = mapped_column(Text, nullable=True) # JSON string
+    performed_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    performed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    
+    performed_by: Mapped[Optional['User']] = relationship()
+
+
+
+class ImportHistory(Base):
+    __tablename__ = 'import_history'
+    
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    module_name: Mapped[str] = mapped_column(String(100), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    total_rows: Mapped[int] = mapped_column(Integer, default=0)
+    successful_rows: Mapped[int] = mapped_column(Integer, default=0)
+    failed_rows: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(50)) # PENDING, SUCCESS, PARTIAL, FAILED
+    error_report_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    uploaded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    uploaded_by: Mapped[Optional['User']] = relationship()
+
+
+
+# =========================================================================
+# CRM & SALES ERP MODULE
+# =========================================================================
+
+class Lead(Base):
+    __tablename__ = 'leads'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    company_name: Mapped[str] = mapped_column(String(100))
+    contact_person: Mapped[str] = mapped_column(String(100))
+    email: Mapped[str] = mapped_column(String(100))
+    phone: Mapped[str] = mapped_column(String(20))
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    industry: Mapped[Optional[str]] = mapped_column(String(50))
+    expected_value: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    stage: Mapped[str] = mapped_column(String(50), default='NEW') # NEW, CONTACTED, QUALIFIED, QUOTATION, NEGOTIATION, WON, LOST
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    follow_up_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class FollowUpActivity(Base):
+    __tablename__ = 'follow_up_activities'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    lead_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('leads.id'))
+    activity_type: Mapped[str] = mapped_column(String(50))
+    notes: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id'))
+
+class SalesQuotation(Base):
+    __tablename__ = 'sales_quotations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quotation_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    lead_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('leads.id'), nullable=True)
+    quotation_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    validity_date: Mapped[datetime] = mapped_column(DateTime)
+    subtotal: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    cgst: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    sgst: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    igst: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    discount_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    total_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    status: Mapped[str] = mapped_column(String(50), default='DRAFT') # DRAFT, SENT, APPROVED, REJECTED, CONVERTED
+    approval_status: Mapped[str] = mapped_column(String(50), default='DRAFT')
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id'))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    customer = relationship('Customer', back_populates='quotations')
+    line_items = relationship('SalesQuotationLineItem', back_populates='quotation', cascade='all, delete')
+
+class SalesQuotationLineItem(Base):
+    __tablename__ = 'sales_quotation_line_items'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    quotation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sales_quotations.id'))
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    unit_price: Mapped[float] = mapped_column(Numeric(12, 2))
+    gst_percent: Mapped[float] = mapped_column(Numeric(5, 2))
+    discount_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    
+    quotation = relationship('SalesQuotation', back_populates='line_items')
+    item = relationship('Item')
+
+class SalesOrder(Base):
+    __tablename__ = 'sales_orders'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sales_order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    quotation_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('sales_quotations.id'), nullable=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    order_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    delivery_date: Mapped[datetime] = mapped_column(DateTime)
+    subtotal: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    tax_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    total_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    dispatch_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, PARTIALLY_DISPATCHED, DISPATCHED, CLOSED
+    payment_status: Mapped[str] = mapped_column(String(50), default='PENDING')
+    approval_status: Mapped[str] = mapped_column(String(50), default='DRAFT')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    customer = relationship('Customer', back_populates='sales_orders')
+    line_items = relationship('SalesOrderLineItem', back_populates='sales_order', cascade='all, delete')
+
+class SalesOrderLineItem(Base):
+    __tablename__ = 'sales_order_line_items'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    sales_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sales_orders.id'))
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    ordered_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    dispatched_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    pending_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    rate: Mapped[float] = mapped_column(Numeric(12, 2))
+    gst_percent: Mapped[float] = mapped_column(Numeric(5, 2))
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    
+    sales_order = relationship('SalesOrder', back_populates='line_items')
+    item = relationship('Item')
+
+class DeliveryChallan(Base):
+    __tablename__ = 'delivery_challans'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dc_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    sales_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sales_orders.id'))
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('warehouses.id'))
+    dispatch_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    transporter_name: Mapped[Optional[str]] = mapped_column(String(100))
+    vehicle_number: Mapped[Optional[str]] = mapped_column(String(50))
+    driver_contact: Mapped[Optional[str]] = mapped_column(String(50))
+    eway_bill_number: Mapped[Optional[str]] = mapped_column(String(50))
+    dispatch_status: Mapped[str] = mapped_column(String(50), default='PENDING')
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    line_items = relationship('DeliveryChallanLineItem', back_populates='delivery_challan', cascade='all, delete')
+
+class DeliveryChallanLineItem(Base):
+    __tablename__ = 'delivery_challan_line_items'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    dc_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('delivery_challans.id'))
+    sales_order_line_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('sales_order_line_items.id'))
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    dispatched_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    pending_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    unit_price: Mapped[float] = mapped_column(Numeric(12, 2))
+    total: Mapped[float] = mapped_column(Numeric(12, 2))
+    
+    delivery_challan = relationship('DeliveryChallan', back_populates='line_items')
+
+class AccountsReceivable(Base):
+    __tablename__ = 'accounts_receivable'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    ar_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    invoice_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('invoices.id'), nullable=True) # Could be linked to general invoice table
+    invoice_amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    received_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    balance_amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    due_date: Mapped[datetime] = mapped_column(DateTime)
+    payment_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, PARTIALLY_RECEIVED, PAID, OVERDUE
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    customer = relationship('Customer', back_populates='receivables')
+
+class CustomerLedger(Base):
+    __tablename__ = 'customer_ledger'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    transaction_type: Mapped[str] = mapped_column(String(50)) # INVOICE, PAYMENT, CREDIT_NOTE
+    reference_type: Mapped[str] = mapped_column(String(50))
+    reference_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    debit_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    credit_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    running_balance: Mapped[float] = mapped_column(Numeric(12, 2))
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    customer = relationship('Customer', back_populates='ledger_entries')
+
+class CustomerPayment(Base):
+    __tablename__ = 'customer_payments'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customers.id'))
+    payment_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    payment_method: Mapped[str] = mapped_column(String(50))
+    bank_reference: Mapped[Optional[str]] = mapped_column(String(100))
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    status: Mapped[str] = mapped_column(String(50), default='COMPLETED')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class CustomerPaymentAllocation(Base):
+    __tablename__ = 'customer_payment_allocations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    payment_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('customer_payments.id'))
+    ar_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('accounts_receivable.id'))
+    allocated_amount: Mapped[float] = mapped_column(Numeric(12, 2))
+
+
+
+# =========================================================================
+# MANUFACTURING & PRODUCTION MODULE
+# =========================================================================
+
+class BOM(Base):
+    __tablename__ = 'boms'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bom_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    finished_good_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    version: Mapped[str] = mapped_column(String(20), default='V1.0')
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    total_material_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    labor_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    overhead_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    total_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    status: Mapped[str] = mapped_column(String(50), default='DRAFT') # DRAFT, ACTIVE, OBSOLETE
+    approval_status: Mapped[str] = mapped_column(String(50), default='PENDING')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+
+    finished_good_item = relationship('Item')
+    line_items = relationship('BOMLineItem', back_populates='bom', cascade='all, delete')
+
+class BOMLineItem(Base):
+    __tablename__ = 'bom_line_items'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bom_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('boms.id'))
+    raw_material_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    required_qty: Mapped[float] = mapped_column(Numeric(12, 4))
+    wastage_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+    unit_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    total_cost: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    
+    bom = relationship('BOM', back_populates='line_items')
+    raw_material_item = relationship('Item')
+
+class ProductionOrder(Base):
+    __tablename__ = 'production_orders'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    production_order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    sales_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('sales_orders.id'), nullable=True)
+    bom_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('boms.id'))
+    production_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    completed_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    rejected_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    pending_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    planned_start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    planned_end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    actual_start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    actual_end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    production_status: Mapped[str] = mapped_column(String(50), default='PLANNED') # PLANNED, RELEASED, IN_PROGRESS, QC_PENDING, COMPLETED, CLOSED, CANCELLED
+    approval_status: Mapped[str] = mapped_column(String(50), default='PENDING')
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    bom = relationship('BOM')
+    work_orders = relationship('WorkOrder', back_populates='production_order', cascade='all, delete')
+
+class Workstation(Base):
+    __tablename__ = 'workstations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workstation_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    workstation_name: Mapped[str] = mapped_column(String(100))
+    capacity_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
+    shift_capacity: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(50), default='ACTIVE')
+    maintenance_due: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+class WorkOrder(Base):
+    __tablename__ = 'work_orders'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    production_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('production_orders.id'))
+    operation_name: Mapped[str] = mapped_column(String(100))
+    workstation_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('workstations.id'), nullable=True)
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    planned_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
+    actual_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
+    status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, IN_PROGRESS, COMPLETED, HOLD
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    production_order = relationship('ProductionOrder', back_populates='work_orders')
+    workstation = relationship('Workstation')
+
+class MRPRecommendation(Base):
+    __tablename__ = 'mrp_recommendations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    required_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    available_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    shortage_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    recommended_procurement_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    recommendation_type: Mapped[str] = mapped_column(String(50)) # PURCHASE, TRANSFER, PRODUCTION
+    status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, ACCEPTED, REJECTED
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    item = relationship('Item')
+
+class QualityInspection(Base):
+    __tablename__ = 'quality_inspections'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    inspection_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    production_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('production_orders.id'))
+    inspected_qty: Mapped[float] = mapped_column(Numeric(12, 2))
+    accepted_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    rejected_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
+    inspector_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    inspection_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, PASSED, FAILED, REWORK
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    production_order = relationship('ProductionOrder')
+
+
+
+# =========================================================================
+# WORKFLOW AUTOMATION & TASK ENGINE MODULE
+# =========================================================================
+
+
+class SystemAnnouncement(Base):
+    __tablename__ = 'system_announcements'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    message: Mapped[str] = mapped_column(Text)
+    audience: Mapped[str] = mapped_column(String(50), default='ALL') # ALL, MANAGERS, ADMINS
+    start_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class Task(Base):
+    __tablename__ = 'tasks'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    task_type: Mapped[str] = mapped_column(String(50)) # APPROVAL, MANUAL, INVESTIGATION
+    related_entity_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    related_entity_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    assigned_to: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id'))
+    assigned_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    priority: Mapped[str] = mapped_column(String(20), default='MEDIUM')
+    task_status: Mapped[str] = mapped_column(String(50), default='OPEN') # OPEN, IN_PROGRESS, COMPLETED, HOLD, CANCELLED, OVERDUE
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class WorkflowRule(Base):
+    __tablename__ = 'workflow_rules'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    rule_name: Mapped[str] = mapped_column(String(200))
+    module_name: Mapped[str] = mapped_column(String(100))
+    trigger_event: Mapped[str] = mapped_column(String(100)) # e.g. ON_STOCK_CHANGE, ON_INVOICE_CREATE
+    condition_json: Mapped[str] = mapped_column(Text) # JSON logic
+    action_json: Mapped[str] = mapped_column(Text) # JSON action payload
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ActivityLog(Base):
+    __tablename__ = 'activity_logs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    activity_type: Mapped[str] = mapped_column(String(100))
+    entity_type: Mapped[str] = mapped_column(String(100))
+    entity_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True))
+    description: Mapped[str] = mapped_column(Text)
+    performed_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class BackgroundJob(Base):
+    __tablename__ = 'background_jobs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    job_name: Mapped[str] = mapped_column(String(200))
+    module_name: Mapped[str] = mapped_column(String(100))
+    job_status: Mapped[str] = mapped_column(String(50), default='QUEUED') # QUEUED, RUNNING, SUCCESS, FAILED, RETRYING
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+    created_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    payload_json: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+
+# =========================================================================
+# INTERNAL HRMS & MAINTENANCE MODULE
+# NOTE: Department and Employee models are defined in the Master section above.
+# Shift model is new and added here.
+# =========================================================================
+
+class Shift(Base):
+    __tablename__ = 'shifts'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    shift_name: Mapped[str] = mapped_column(String(100))
+    start_time: Mapped[str] = mapped_column(String(10)) # e.g. '09:00'
+    end_time: Mapped[str] = mapped_column(String(10)) # e.g. '18:00'
+    grace_period_minutes: Mapped[int] = mapped_column(Integer, default=15)
+    weekly_off_days: Mapped[str] = mapped_column(String(50)) # e.g. 'Saturday,Sunday'
+    is_night_shift: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Attendance(Base):
+    __tablename__ = 'attendance'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    attendance_date: Mapped[datetime] = mapped_column(DateTime) # Date only usually
+    punch_in: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    punch_out: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    total_hours: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+    overtime_hours: Mapped[float] = mapped_column(Numeric(5, 2), default=0.0)
+    attendance_status: Mapped[str] = mapped_column(String(50)) # PRESENT, ABSENT, HALF_DAY, LATE, WEEK_OFF, HOLIDAY, ON_LEAVE
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+
+class LeaveType(Base):
+    __tablename__ = 'leave_types'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    leave_name: Mapped[str] = mapped_column(String(100))
+    yearly_quota: Mapped[float] = mapped_column(Numeric(5, 2))
+    carry_forward_allowed: Mapped[bool] = mapped_column(Boolean, default=False)
+    requires_approval: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class LeaveRequest(Base):
+    __tablename__ = 'leave_requests'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    leave_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('leave_types.id'))
+    start_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)
+    total_days: Mapped[float] = mapped_column(Numeric(5, 2))
+    reason: Mapped[str] = mapped_column(Text)
+    approval_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, APPROVED, REJECTED, CANCELLED
+    approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('employees.id'), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class ExpenseClaim(Base):
+    __tablename__ = 'expense_claims'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    claim_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    expense_type: Mapped[str] = mapped_column(String(100))
+    expense_date: Mapped[datetime] = mapped_column(DateTime)
+    amount: Mapped[float] = mapped_column(Numeric(12, 2))
+    gst_amount: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
+    description: Mapped[str] = mapped_column(Text)
+    attachment_path: Mapped[Optional[str]] = mapped_column(String(500))
+    approval_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, APPROVED, REJECTED, REIMBURSED
+    approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('employees.id'), nullable=True)
+    reimbursement_status: Mapped[str] = mapped_column(String(50), default='PENDING')
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class Asset(Base):
+    __tablename__ = 'assets'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asset_code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    asset_name: Mapped[str] = mapped_column(String(200))
+    asset_type: Mapped[str] = mapped_column(String(100)) # IT, MACHINERY, VEHICLE
+    serial_number: Mapped[Optional[str]] = mapped_column(String(100))
+    purchase_date: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    warranty_expiry: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('departments.id'), nullable=True)
+    asset_status: Mapped[str] = mapped_column(String(50), default='AVAILABLE') # AVAILABLE, ASSIGNED, UNDER_REPAIR, SCRAPPED
+    current_location: Mapped[Optional[str]] = mapped_column(String(200))
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+
+class AssetAllocation(Base):
+    __tablename__ = 'asset_allocations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('assets.id'))
+    employee_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    allocated_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    return_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    allocation_status: Mapped[str] = mapped_column(String(50), default='ACTIVE') # ACTIVE, RETURNED
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+
+class MaintenanceRequest(Base):
+    __tablename__ = 'maintenance_requests'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    request_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    machine_asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('assets.id'))
+    reported_by: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    issue_type: Mapped[str] = mapped_column(String(100))
+    priority: Mapped[str] = mapped_column(String(50), default='MEDIUM')
+    description: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(50), default='OPEN') # OPEN, IN_PROGRESS, COMPLETED, CLOSED, ESCALATED
+    assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('employees.id'), nullable=True)
+    downtime_start: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    downtime_end: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+class PreventiveMaintenanceSchedule(Base):
+    __tablename__ = 'preventive_maintenance_schedules'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    machine_asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('assets.id'))
+    maintenance_type: Mapped[str] = mapped_column(String(100))
+    frequency_days: Mapped[int] = mapped_column(Integer)
+    next_due_date: Mapped[datetime] = mapped_column(DateTime)
+    checklist_json: Mapped[Optional[str]] = mapped_column(Text)
+    assigned_team: Mapped[str] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+class MaintenanceLog(Base):
+    __tablename__ = 'maintenance_logs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    maintenance_request_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('maintenance_requests.id'), nullable=True)
+    work_done: Mapped[str] = mapped_column(Text)
+    spare_parts_used: Mapped[Optional[str]] = mapped_column(Text)
+    downtime_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
+    completed_by: Mapped[uuid.UUID] = mapped_column(ForeignKey('employees.id'))
+    completed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    remarks: Mapped[Optional[str]] = mapped_column(Text)
+
+
+# =========================================================================
+# ENTERPRISE BI & ANALYTICS MODULE
+# NOTE: AnalyticsSnapshot is already defined in the core analytics section
+# above (line ~1280). BusinessInsight is new and added here.
+# =========================================================================
+
+class BusinessInsight(Base):
+    __tablename__ = 'business_insights'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    module_name: Mapped[str] = mapped_column(String(50))
+    insight_type: Mapped[str] = mapped_column(String(50)) # ANOMALY, TREND, FORECAST
+    message: Mapped[str] = mapped_column(Text)
+    severity: Mapped[str] = mapped_column(String(20), default='INFO') # INFO, WARNING, CRITICAL
+    data_json: Mapped[Optional[str]] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SystemHealthMetric(Base):
+    __tablename__ = 'system_health_metrics'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    cpu_usage: Mapped[float] = mapped_column(Float)
+    memory_usage: Mapped[float] = mapped_column(Float)
+    db_status: Mapped[str] = mapped_column(String(20)) # UP, DOWN
+    redis_status: Mapped[str] = mapped_column(String(20)) # UP, DOWN
+    celery_queue_depth: Mapped[int] = mapped_column(Integer, default=0)
+    websocket_pool_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

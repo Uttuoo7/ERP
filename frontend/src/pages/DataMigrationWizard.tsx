@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Steps, Button, Upload, Select, Card, Typography, Table, notification, Space, Alert } from 'antd';
 import { InboxOutlined, CheckCircleOutlined, CodeOutlined, PlayCircleOutlined } from '@ant-design/icons';
-import { post } from '../services/api';
+import { post } from "../api";
 
 const { Step } = Steps;
 const { Title, Text } = Typography;

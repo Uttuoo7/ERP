@@ -3,7 +3,7 @@ import {
   Bell, MailOpen, Trash2, CheckCircle2, AlertTriangle, Info, XCircle, Loader2, Sparkles, Filter, Check
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getNotifications, markAllNotificationsRead, markNotificationRead } from '../api';
+import { getNotifications, markAllNotificationsRead, markNotificationRead } from "../api";
 
 const NotificationCenter: React.FC = () => {
   const [loading, setLoading] = useState(false);

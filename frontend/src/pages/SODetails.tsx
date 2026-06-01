@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getSO, getAttachments, uploadAttachment, downloadAttachmentUrl, updateSO } from '../api';
+import { getSO, getAttachments, uploadAttachment, downloadAttachmentUrl, updateSO } from "../api";
 import { useParams, Link } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useAuth } from "../AuthContext";
 
 export default function SODetails() {
   const { id } = useParams();

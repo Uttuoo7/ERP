@@ -4,7 +4,7 @@ import {
   ClipboardCheck, Search, ShieldCheck, RefreshCw, Loader2, ArrowRight, Truck, Eye, ShieldAlert, Inbox
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getGRNs } from '../api';
+import { getGRNs } from "../api";
 
 interface GRNHeader {
   id: string;

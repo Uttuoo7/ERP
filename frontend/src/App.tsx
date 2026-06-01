@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import ErrorBoundary from './components/ErrorBoundary';
 import DashboardSkeleton from './components/DashboardSkeleton';
 import NotificationDropdown from './components/NotificationDropdown';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore } from "./store/authStore";
 
 // --- Dynamic Route Lazy Loading Optimizations ---
 const VendorList = lazy(() => import('./pages/VendorList'));

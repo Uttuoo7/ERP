@@ -6,7 +6,7 @@ from . import models, schemas, database, auth_utils, dependencies
 
 router = APIRouter()
 
-from backend.main import limiter
+from .limiter import limiter
 
 @router.post("/login", response_model=schemas.Token)
 @limiter.limit("5/minute")

@@ -5,14 +5,20 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from . import database, dependencies, models, schemas, event_dispatcher, workflow_engine
+from . import database, dependencies, models, schemas, event_dispatcher, workflow_engine, budget_engine, commitment_engine
 
 router = APIRouter()
 
 # -- Utility to calculate next auto-incrementing PR number --
-def generate_next_pr_number(db: Session) -> str:
+def generate_next_pr_number(db: Session, category_id: Optional[uuid.UUID] = None) -> str:
     current_year = datetime.utcnow().year
-    prefix = f"PR-{current_year}-"
+    prefix_str = ""
+    if category_id:
+        cat = db.query(models.ProcurementCategory).filter(models.ProcurementCategory.id == category_id).first()
+        if cat and cat.prefix:
+            prefix_str = f"{cat.prefix}-"
+            
+    prefix = f"{prefix_str}PR-{current_year}-"
     
     # Fetch count of all PRs created in current year to generate incrementing index
     count = db.query(models.PurchaseRequisition)\
@@ -59,7 +65,7 @@ def create_requisition(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(dependencies.get_current_user)
 ):
-    pr_num = generate_next_pr_number(db)
+    pr_num = generate_next_pr_number(db, payload.category_id)
     
     db_pr = models.PurchaseRequisition(
         pr_number=pr_num,
@@ -67,6 +73,7 @@ def create_requisition(
         department_id=payload.department_id,
         project_id=payload.project_id,
         cost_center_id=payload.cost_center_id,
+        category_id=payload.category_id,
         priority=payload.priority,
         required_date=payload.required_date,
         delivery_location_id=payload.delivery_location_id,
@@ -148,6 +155,7 @@ def update_requisition(
     pr.department_id = payload.department_id
     pr.project_id = payload.project_id
     pr.cost_center_id = payload.cost_center_id
+    pr.category_id = payload.category_id
     pr.priority = payload.priority
     pr.required_date = payload.required_date
     pr.delivery_location_id = payload.delivery_location_id
@@ -212,6 +220,26 @@ def submit_requisition(
     # Calculate Total Amount for Workflow engine Context
     total_amount = sum(line.estimated_price * line.quantity for line in pr.line_items)
     
+    # ---------------------------------------------------------
+    # Budget Evaluation
+    # ---------------------------------------------------------
+    budget_context = {
+        "department_id": pr.department_id,
+        "project_id": pr.project_id,
+        "cost_center_id": pr.cost_center_id,
+        "category_id": pr.category_id,
+        "branch_id": None
+    }
+    
+    try:
+        eval_result = budget_engine.evaluate_transaction(db, float(total_amount), budget_context)
+        # If OK or WARNING, we record Planned Spend
+        commitment_engine.transition_to_planned(db, float(total_amount), budget_context, "PR", pr.id)
+    except budget_engine.BudgetExceededException as e:
+        # We block standard workflow and possibly enter exception route,
+        # but for PR, raising a 400 is common if no explicit workflow override exists.
+        raise HTTPException(status_code=400, detail=str(e.message))
+
     # Update state
     pr.status = "PENDING_APPROVAL"
     db.commit()
@@ -235,7 +263,8 @@ def submit_requisition(
         context={
             "amount": float(total_amount),
             "department": pr.department.name if pr.department else "General",
-            "project": pr.project.name if pr.project else "General"
+            "project": pr.project.name if pr.project else "General",
+            "category_id": pr.category_id
         },
         db=db
     )
@@ -253,7 +282,7 @@ def duplicate_requisition(
     if not source:
         raise HTTPException(status_code=404, detail="Requisition not found")
         
-    pr_num = generate_next_pr_number(db)
+    pr_num = generate_next_pr_number(db, source.category_id)
     
     copy_pr = models.PurchaseRequisition(
         pr_number=pr_num,
@@ -261,6 +290,7 @@ def duplicate_requisition(
         department_id=source.department_id,
         project_id=source.project_id,
         cost_center_id=source.cost_center_id,
+        category_id=source.category_id,
         priority=source.priority,
         required_date=source.required_date,
         delivery_location_id=source.delivery_location_id,

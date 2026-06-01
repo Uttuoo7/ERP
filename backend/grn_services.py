@@ -5,12 +5,12 @@ import logging
 from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from . import models, schemas, inventory_engine, event_dispatcher, document_traceability
+from . import models, schemas, inventory_engine, event_dispatcher, document_traceability, commitment_engine
 
 logger = logging.getLogger(__name__)
 
-def generate_grn_number() -> str:
-    return f"GRN-{random.randint(10000, 99999)}"
+def generate_grn_number(prefix: str = "") -> str:
+    return f"{prefix}GRN-{random.randint(10000, 99999)}"
 
 def convert_po_to_grn_draft(
     db: Session,
@@ -33,11 +33,18 @@ def convert_po_to_grn_draft(
     if po.status == models.POStatus.FULFILLED:
         raise ValueError("Purchase Order is already fully satisfied/fulfilled.")
 
-    grn_num = generate_grn_number()
+    prefix = ""
+    if po.category_id:
+        cat = db.query(models.ProcurementCategory).filter(models.ProcurementCategory.id == po.category_id).first()
+        if cat and cat.prefix:
+            prefix = f"{cat.prefix}-"
+            
+    grn_num = generate_grn_number(prefix)
     grn = models.GoodsReceiptNote(
         grn_number=grn_num,
         po_id=po_id,
         vendor_id=po.vendor_id,
+        category_id=po.category_id,
         warehouse_id=warehouse_id,
         received_by_id=user_id,
         vehicle_details=vehicle_details,
@@ -224,6 +231,22 @@ def submit_qc_inspection(
         po.status = models.POStatus.PARTIAL_RECEIPT
 
     db.flush()
+
+    # Calculate Accrued Value
+    accrued_value = 0.0
+    for line in grn.line_items:
+        qc = next((item for item in qc_payload.items if item.grn_line_id == line.id), None)
+        if qc and line.po_line_item:
+            accrued_value += float(qc.quantity_accepted) * float(line.po_line_item.unit_price)
+
+    if accrued_value > 0:
+        budget_context = {
+            "department_id": po.department_id,
+            "category_id": po.category_id,
+            "project_id": None,
+            "cost_center_id": None
+        }
+        commitment_engine.transition_committed_to_accrued(db, accrued_value, budget_context, "GRN", grn.id)
 
     # 6. Vendor Performance Track Summary
     expected_date = po.expected_delivery_date

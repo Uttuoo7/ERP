@@ -2,7 +2,7 @@ fastapi
 uvicorn[standard]
 sqlalchemy
 psycopg2-binary
-pydantic
+pydantic[email]
 pyjwt
 passlib[bcrypt]
 python-multipart
@@ -12,3 +12,12 @@ redis
 python-json-logger
 asgi-correlation-id
 slowapi
+qrcode[pil]
+pillow
+openpyxl
+alembic
+aioredis
+httpx
+gunicorn
+psutil
+

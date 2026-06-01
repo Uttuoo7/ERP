@@ -4,7 +4,7 @@ import {
   FileText, Search, Plus, Filter, RefreshCw, Clock, CheckCircle, HelpCircle, ArrowRight, Loader2, ListCollapse, Award
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getRFQs } from '../api';
+import { getRFQs } from "../api";
 
 interface RFQ {
   id: string;

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getPOs, getPO, createGRN } from '../api';
+import { getPOs, getPO, createGRN } from "../api";
 import { useNavigate } from 'react-router-dom';
 
 export default function ReceiveGoods() {

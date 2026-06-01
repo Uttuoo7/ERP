@@ -1,97 +1,117 @@
-import uuid
-import logging
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 import os
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse, HTMLResponse
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
-from . import models, database, dependencies
-from .tasks.document_tasks import async_generate_document
-from .services.storage_service import generate_presigned_url, STORAGE_BUCKET
+from .database import get_db
+from .dependencies import get_current_user
+from .models import EnterpriseDocument, DocumentAuditLog, PurchaseOrder
+from .services.document_engine import DocumentEngine
 
-router = APIRouter()
-logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/documents", tags=["Document Vault"])
 
-@router.post("/generate/{document_type}/{reference_id}", status_code=status.HTTP_202_ACCEPTED)
-def request_document_generation(
-    document_type: str,
-    reference_id: uuid.UUID,
-    db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.get_current_user)
+# Storage directory mapping
+STORAGE_DIR = os.path.join(os.path.expanduser("~"), ".gemini", "antigravity", "scratch", "P2P_ERP", "storage")
+
+@router.get("/vault")
+def get_vault_documents(
+    doc_type: str = None,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-    """
-    Triggers an asynchronous Celery task to generate a branded PDF.
-    """
-    # Simple validation
-    if document_type == "PURCHASE_ORDER":
-        po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == reference_id).first()
-        if not po:
-            raise HTTPException(status_code=404, detail="Purchase Order not found")
-    else:
-        raise HTTPException(status_code=400, detail="Unsupported document type")
+    """Retrieve list of generated documents in the vault."""
+    query = db.query(EnterpriseDocument)
+    if doc_type:
+        query = query.filter(EnterpriseDocument.document_type == doc_type)
         
-    # Dispatch to background
-    async_generate_document.delay(document_type, str(reference_id), str(current_user.id))
+    docs = query.order_by(EnterpriseDocument.created_at.desc()).all()
     
-    return {"message": "Document generation started. You will be notified when ready."}
+    return [
+        {
+            "id": str(d.id),
+            "document_type": d.document_type,
+            "file_name": d.file_name,
+            "file_size_bytes": d.file_size_bytes,
+            "created_at": d.created_at.isoformat(),
+            "is_signed": d.is_signed
+        } for d in docs
+    ]
 
-@router.get("/{document_type}/{reference_id}/latest")
-def get_latest_document(
-    document_type: str,
-    reference_id: uuid.UUID,
-    db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.get_current_user)
+@router.post("/generate/po/{po_id}")
+def generate_po_document_api(
+    po_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-    """
-    Returns metadata and a pre-signed URL for the latest generated version of this document.
-    """
-    doc = db.query(models.EnterpriseDocument).filter(
-        models.EnterpriseDocument.document_type == document_type,
-        models.EnterpriseDocument.reference_id == reference_id
-    ).order_by(models.EnterpriseDocument.version.desc()).first()
-    
+    """Triggers generation. For this mockup, we run it synchronously but normally it'd be a celery task."""
+    try:
+        doc = DocumentEngine.generate_purchase_order_document(db, po_id, generated_by_id=current_user.id)
+        return {"message": "Document generated successfully", "document_id": str(doc.id)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/generate/digest")
+def generate_digest_api(
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Manual trigger for executive digest."""
+    doc = DocumentEngine.generate_executive_digest(db)
+    return {"message": "Digest generated successfully", "document_id": str(doc.id)}
+
+@router.get("/download/{doc_id}")
+def download_document(
+    doc_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Fetch the HTML file and log the audit."""
+    doc = db.query(EnterpriseDocument).filter(EnterpriseDocument.id == doc_id).first()
     if not doc:
-        raise HTTPException(status_code=404, detail="No documents generated yet.")
+        raise HTTPException(status_code=404, detail="Document not found")
         
-    # Generate S3 presigned URL
-    presigned_url = generate_presigned_url(doc.s3_key, expiry_minutes=15)
-    
-    # Log Audit
-    audit = models.DocumentAuditLog(
+    audit = DocumentAuditLog(
         document_id=doc.id,
         user_id=current_user.id,
-        action="VIEWED",
-        ip_address="127.0.0.1" # Mock
+        action="VIEWED"
     )
     db.add(audit)
     db.commit()
     
-    return {
-        "id": str(doc.id),
-        "file_name": doc.file_name,
-        "version": doc.version,
-        "is_signed": doc.is_signed,
-        "created_at": doc.created_at,
-        "download_url": presigned_url
-    }
-
-@router.get("/vault/{encoded_key}")
-def download_from_vault(
-    encoded_key: str,
-    sig: str,
-    expires: int
-):
-    """
-    Mock S3 endpoint. In production, the user would download directly from AWS S3 using the presigned URL.
-    This serves the file locally for simulation.
-    """
-    physical_path = os.path.join(STORAGE_BUCKET, encoded_key)
-    if not os.path.exists(physical_path):
-        raise HTTPException(status_code=404, detail="File no longer exists in vault.")
+    file_path = os.path.join(STORAGE_DIR, doc.s3_key)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File binary missing from storage")
         
-    return FileResponse(
-        path=physical_path,
-        media_type="application/pdf",
-        filename=encoded_key.split('_')[-1] # Return the uuid.pdf part
-    )
+    return FileResponse(file_path, media_type="text/html", filename=doc.file_name)
+
+@router.get("/verify/{doc_hash}", response_class=HTMLResponse)
+def public_verify_document(doc_hash: str, db: Session = Depends(get_db)):
+    """Public endpoint for QR verification."""
+    doc = db.query(EnterpriseDocument).filter(EnterpriseDocument.file_hash == doc_hash).first()
+    
+    if not doc:
+        return f"""
+        <html>
+            <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #fee2e2;">
+                <h1 style="color: #991b1b;">Verification Failed ❌</h1>
+                <p>This document hash is not recognized by the P2P ERP Vault. It may be forged.</p>
+            </body>
+        </html>
+        """
+        
+    return f"""
+    <html>
+        <body style="font-family: sans-serif; text-align: center; padding: 50px; background: #ecfdf5;">
+            <h1 style="color: #065f46;">Document Authentic ✅</h1>
+            <p>This document was securely generated by P2P ERP Vault and has not been tampered with.</p>
+            <div style="background: white; padding: 20px; border-radius: 8px; display: inline-block; text-align: left; margin-top: 20px; border: 1px solid #d1fae5;">
+                <strong>Document ID:</strong> {doc.id}<br>
+                <strong>Type:</strong> {doc.document_type}<br>
+                <strong>Generated On:</strong> {doc.created_at.strftime('%Y-%m-%d %H:%M')}<br>
+                <strong>Signature Valid:</strong> {'Yes' if doc.is_signed else 'No'}
+            </div>
+        </body>
+    </html>
+    """

@@ -4,7 +4,7 @@ import {
   ArrowLeft, Search, Loader2, Calendar, ClipboardList, TrendingUp, TrendingDown, ArrowUpRight, ArrowDownLeft, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getStockLedger } from '../api';
+import { getStockLedger } from "../api";
 
 interface LedgerEntry {
   id: string;

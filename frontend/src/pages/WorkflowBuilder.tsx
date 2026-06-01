@@ -3,7 +3,7 @@ import {
   Plus, Trash2, ArrowUp, ArrowDown, Save, ShieldAlert, Settings, Shield, Network, Loader2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getWorkflowDefinitions, createWorkflowDefinition } from '../api';
+import { getWorkflowDefinitions, createWorkflowDefinition } from "../api";
 
 interface Step {
   step_number: number;

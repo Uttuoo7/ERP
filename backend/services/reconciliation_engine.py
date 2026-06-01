@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from decimal import Decimal
 from datetime import datetime
-from . import models
+from .. import models
 import random
 
 logger = logging.getLogger(__name__)

@@ -1,0 +1,128 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: p2p_erp_db_prod
+    environment:
+      POSTGRES_USER: ${DB_USER:-erp_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-erp_password}
+      POSTGRES_DB: ${DB_NAME:-p2p_erp}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: p2p_erp_redis_prod
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: p2p_erp_backend_prod
+    command: sh -c "alembic upgrade head && gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:8000 backend.main:app --timeout 120 --graceful-timeout 10"
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-erp_user}:${DB_PASSWORD:-erp_password}@db:5432/${DB_NAME:-p2p_erp}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - TESTING=False
+      - LOG_LEVEL=INFO
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  celery_worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: p2p_erp_celery_prod
+    command: celery -A backend.celery_app worker --loglevel=info
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-erp_user}:${DB_PASSWORD:-erp_password}@db:5432/${DB_NAME:-p2p_erp}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  celery_beat:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: p2p_erp_celery_beat_prod
+    command: celery -A backend.celery_app beat --loglevel=info
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://${DB_USER:-erp_user}:${DB_PASSWORD:-erp_password}@db:5432/${DB_NAME:-p2p_erp}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: p2p_erp_frontend_prod
+    restart: always
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:

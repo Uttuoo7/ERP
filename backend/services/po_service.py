@@ -4,7 +4,7 @@ from typing import List, Dict, Any, Optional
 from decimal import Decimal
 from datetime import datetime
 from sqlalchemy.orm import Session
-from backend import models, schemas, event_dispatcher, document_traceability, workflow_engine, po_amendment
+from backend import models, schemas, event_dispatcher, document_traceability, workflow_engine, po_amendment, budget_engine
 from backend.core.exceptions import EntityNotFoundException, WorkflowValidationException
 
 logger = logging.getLogger(__name__)
@@ -62,9 +62,16 @@ class PurchaseOrderService:
                 raise EntityNotFoundException("Selected supplier quotation not located.")
                 
             # 2. Sequence PO number
+            prefix = ""
+            category_id = quote.rfq.category_id
+            if category_id:
+                cat = db.query(models.ProcurementCategory).filter(models.ProcurementCategory.id == category_id).first()
+                if cat and cat.prefix:
+                    prefix = f"{cat.prefix}-"
+                    
             year = datetime.utcnow().year
             count = db.query(models.PurchaseOrder).count()
-            po_number = f"PO-{year}-{count + 1:04d}"
+            po_number = f"{prefix}PO-{year}-{count + 1:04d}"
             
             # 3. Create PO Header
             po = models.PurchaseOrder(
@@ -72,6 +79,7 @@ class PurchaseOrderService:
                 vendor_id=vendor_id,
                 linked_rfq_id=rfq_id,
                 department_id=quote.rfq.department_id,
+                category_id=category_id,
                 payment_terms=quote.payment_terms or "Standard Net 30",
                 delivery_terms=quote.rfq.delivery_terms,
                 expected_delivery_date=datetime.utcnow(),
@@ -194,6 +202,20 @@ class PurchaseOrderService:
         if po.status != models.POStatus.DRAFT:
             raise WorkflowValidationException("Only DRAFT Purchase Orders can be submitted for approval.")
             
+        budget_context = {
+            "department_id": po.department_id,
+            "project_id": None, # Should be retrieved if we had project linking on PO
+            "cost_center_id": None,
+            "category_id": po.category_id,
+            "branch_id": None
+        }
+        
+        try:
+            budget_engine.evaluate_transaction(db, float(po.total_amount), budget_context)
+            # If OK/WARNING, reserve/verify fund. We don't commit until fully approved.
+        except budget_engine.BudgetExceededException as e:
+            raise WorkflowValidationException(str(e.message))
+            
         po.workflow_state = "PENDING_APPROVAL"
         db.commit()
         
@@ -201,7 +223,8 @@ class PurchaseOrderService:
         context = {
             "amount": float(po.total_amount),
             "department": po.department.name if po.department else "Purchasing",
-            "version": po.amendment_version
+            "version": po.amendment_version,
+            "category_id": po.category_id
         }
         
         workflow_engine.initialize_workflow("PURCHASE_ORDER", po.id, context, db)

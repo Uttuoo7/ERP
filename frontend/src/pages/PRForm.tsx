@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { 
   createRequisition, updateRequisition, getRequisition, 
   getItems, getVendors, getWarehouses, getMasterList 
-} from '../api';
+} from "../api";
 
 interface LineItem {
   item_id: string;

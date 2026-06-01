@@ -56,12 +56,11 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="P2P ERP API", lifespan=lifespan)
 
 # Setup Rate Limiting
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
+from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
+from .limiter import limiter
 
-limiter = Limiter(key_func=get_remote_address)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
@@ -141,6 +140,9 @@ def health_check():
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 
+from .saas_router import router as saas_router
+app.include_router(saas_router, tags=["SaaS Onboarding"])
+
 # Dynamic Master Routers
 from .master_factory import create_master_router
 from . import schemas, models
@@ -179,20 +181,38 @@ app.include_router(po_router, prefix="/api/pos", tags=["Purchase Orders"])
 from .pr_router import router as pr_router
 app.include_router(pr_router, prefix="/api/pos/requisitions", tags=["Purchase Requisitions"])
 
+from .activity_router import router as activity_router
+from .intelligence_router import router as intelligence_router
+from .ai_router import router as ai_router
+app.include_router(intelligence_router, prefix="/api/intelligence", tags=["Intelligence"])
+app.include_router(document_router, prefix="/api/documents", tags=["Document Vault"])
+app.include_router(ai_router, prefix="/api/ai", tags=["AI Assistant"])
+
 from .traceability_router import router as traceability_router
 app.include_router(traceability_router, prefix="/api/traceability", tags=["Document Traceability"])
 
 from .rfq_router import router as rfq_router
 app.include_router(rfq_router, prefix="/api/pos/rfqs", tags=["Request For Quotations"])
 
+from .vendor_portal_router import router as vendor_portal_router
+app.include_router(vendor_portal_router)
+
+from .category_router import router as category_router
+app.include_router(category_router)
+
+from .budget_router import router as budget_router
+app.include_router(budget_router, prefix="/api/budgets", tags=["Budget Governance"])
+
 app.include_router(grn_router, prefix="/api/grns", tags=["Goods Receipt Notes"])
 app.include_router(invoice_router, prefix="/api/invoices", tags=["Invoices"])
 app.include_router(warehouse_router, prefix="/api/warehouses", tags=["Warehouses"])
 app.include_router(attachment_router, prefix="/api/attachments", tags=["Attachments"])
 app.include_router(analytics_router, prefix="/api/analytics", tags=["Analytics"])
-app.include_router(document_router, prefix="/api/documents", tags=["documents"])
 from .integration_router import router as integration_router_instance
 app.include_router(integration_router_instance, prefix="/api/integrations", tags=["Integrations"])
+
+from .document_command_router import router as document_command_router
+app.include_router(document_command_router, prefix="/api/commercial-documents", tags=["Commercial Document Command Center"])
 
 from .tally_mapping_router import router as tally_mapping_router
 app.include_router(tally_mapping_router, prefix="/api/tally-mappings", tags=["Tally Mappings"])
@@ -208,6 +228,11 @@ app.include_router(sla_router, prefix="/api/sla", tags=["SLA & Escalations"])
 
 from .observability_router import router as observability_router
 app.include_router(observability_router, prefix="/api/observability", tags=["System Observability"])
+app.include_router(activity_router, prefix="/api/activity", tags=["Activity Logs"])
+
+from .pdf_router import router as pdf_router
+app.include_router(pdf_router, prefix="/api/pdf", tags=["Branded PDF Document Generation"])
+
 
 from .inventory_router import router as inventory_router
 app.include_router(inventory_router, prefix="/api/inventory", tags=["Inventory Ledger & Balances"])
@@ -215,8 +240,67 @@ app.include_router(inventory_router, prefix="/api/inventory", tags=["Inventory L
 from .finance_router import router as finance_router
 app.include_router(finance_router, prefix="/api/finance", tags=["Universal Finance & Ledger Engine"])
 
+from .ap_router import router as ap_router
+app.include_router(ap_router, prefix="/api/ap", tags=["Accounts Payable"])
+
+from .payment_router import router as payment_router
+app.include_router(payment_router, prefix="/api/payments", tags=["Vendor Payments"])
+
+from .import_export_router import router as import_export_router
+app.include_router(import_export_router, prefix="/api", tags=["Import/Export & Data Management"])
+
+from .crm_router import router as crm_router
+app.include_router(crm_router, prefix="/api", tags=["CRM & Lead Management"])
+
+from .sales_router import router as sales_router
+app.include_router(sales_router, prefix="/api", tags=["Sales Quotes & Orders"])
+
+from .dispatch_router import router as dispatch_router
+app.include_router(dispatch_router, prefix="/api", tags=["Dispatch & Fulfillment"])
+
+from .ar_router import router as ar_router
+app.include_router(ar_router, prefix="/api", tags=["Accounts Receivable"])
+
+from .mfg_bom_router import router as mfg_bom_router
+app.include_router(mfg_bom_router, prefix="/api", tags=["Manufacturing BOM"])
+
+from .mfg_production_router import router as mfg_production_router
+app.include_router(mfg_production_router, prefix="/api", tags=["Manufacturing Production"])
+
+from .mfg_mrp_router import router as mfg_mrp_router
+app.include_router(mfg_mrp_router, prefix="/api", tags=["Manufacturing MRP"])
+
+from .mfg_qc_router import router as mfg_qc_router
+app.include_router(mfg_qc_router, prefix="/api", tags=["Manufacturing QC"])
+
+from .automation_router import router as automation_router
+app.include_router(automation_router, prefix="/api", tags=["Workflow Automation"])
+
+from .hr_router import router as hr_router
+app.include_router(hr_router, prefix="/api", tags=["Human Resources"])
+
+from .ops_router import router as ops_router
+app.include_router(ops_router, prefix="/api", tags=["Internal Operations"])
+
+from .bi_router import router as bi_router
+app.include_router(bi_router, prefix="/api", tags=["Business Intelligence"])
+
 from .workflow_router import router as workflow_router
 app.include_router(workflow_router, prefix="/api/workflow", tags=["Approval Workflows"])
+
+# WebSocket Endpoint
+from fastapi import WebSocket, WebSocketDisconnect
+from .websocket_manager import manager
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            data = await websocket.receive_text()
+            # Handle incoming client messages if any
+    except WebSocketDisconnect:
+        manager.disconnect(websocket, user_id)
 
 from .rbac_router import router as rbac_router
 app.include_router(rbac_router, prefix="/api/auth/rbac", tags=["Role-Based Access Control"])
@@ -227,14 +311,14 @@ app.include_router(notification_router, prefix="/api/notifications", tags=["In-A
 from .reporting_router import router as reporting_router
 app.include_router(reporting_router, prefix="/api/reports", tags=["Analytical CSV Reports Engine"])
 
-from fastapi import WebSocket, WebSocketDisconnect
 
+# Note: A single WebSocket endpoint is defined above at /ws/{user_id}
+# The /api/ws endpoint is handled below for client convenience.
 @app.websocket("/api/ws")
-async def websocket_endpoint(websocket: WebSocket, user_id: str):
+async def websocket_api_endpoint(websocket: WebSocket, user_id: str):
     await manager.connect(websocket, user_id)
     try:
         while True:
-            # We don't necessarily expect clients to send data, but we must await
             data = await websocket.receive_text()
             if data == "ping":
                 await websocket.send_text("pong")

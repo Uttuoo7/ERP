@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ResponsiveContainer, CartesianGrid, XAxis, YAxis, Tooltip, AreaChart, Area } from 'recharts';
-import { getAnalyticsFinance } from '../../../api';
+import { getAnalyticsFinance } from "../../api";
 import { KPICardSkeleton } from '../../components/ui/KPICard';
 
 export function FinanceDashboard() {

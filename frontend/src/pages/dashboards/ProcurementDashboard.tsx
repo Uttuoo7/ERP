@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ResponsiveContainer, BarChart, CartesianGrid, XAxis, YAxis, Tooltip, Bar } from 'recharts';
-import { getAnalyticsProcurement } from '../../../api';
+import { getAnalyticsProcurement } from "../../api";
 import { KPICardSkeleton } from '../../components/ui/KPICard';
 
 export function ProcurementDashboard() {

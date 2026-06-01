@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Save, FileText, CheckCircle, Clock, Calendar, CheckSquare, Square, Layers, Sparkles
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getRequisitions, createRFQFromPR } from '../api';
+import { getRequisitions, createRFQFromPR } from "../api";
 
 interface RequisitionLine {
   id: string;

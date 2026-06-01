@@ -13,7 +13,13 @@ logger = logging.getLogger(__name__)
 @router.get("/policies")
 def get_sla_policies(
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.MANAGER]))
+    current_user: models.User = Depends(dependencies.require_role([
+        models.Role.ADMIN,
+        models.Role.SUPER_ADMIN,
+        models.Role.PROCUREMENT_MANAGER,
+        models.Role.FINANCE_MANAGER,
+        models.Role.WAREHOUSE_MANAGER
+    ]))
 ):
     """List all SLA Automation Policies."""
     return db.query(models.SLAPolicy).all()
@@ -79,7 +85,13 @@ def get_active_timers(
 @router.get("/escalations")
 def get_escalation_logs(
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.MANAGER]))
+    current_user: models.User = Depends(dependencies.require_role([
+        models.Role.ADMIN,
+        models.Role.SUPER_ADMIN,
+        models.Role.PROCUREMENT_MANAGER,
+        models.Role.FINANCE_MANAGER,
+        models.Role.WAREHOUSE_MANAGER
+    ]))
 ):
     """Get history of SLA escalations."""
     logs = db.query(models.EscalationLog, models.SLATimer, models.SLAPolicy).join(

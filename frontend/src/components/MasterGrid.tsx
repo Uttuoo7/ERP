@@ -5,7 +5,7 @@ import {
 import toast from 'react-hot-toast';
 import { 
   getMasterList, createMasterItem, updateMasterItem, deleteMasterItem, bulkImportMaster, exportMasterUrl 
-} from '../api';
+} from "../api";
 
 export interface ColumnDefinition {
   key: string;

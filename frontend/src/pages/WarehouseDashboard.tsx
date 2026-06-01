@@ -4,7 +4,7 @@ import {
   Layers, Search, ShieldAlert, DollarSign, Plus, RefreshCw, Loader2, ArrowRight, ClipboardCheck, History, Package, Boxes
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getInventoryBalances, getWarehouses } from '../api';
+import { getInventoryBalances, getWarehouses } from "../api";
 
 interface WarehouseStock {
   id: string;

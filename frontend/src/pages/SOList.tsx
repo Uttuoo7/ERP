@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getSOs, approveSO, convertSOtoPO } from '../api';
+import { getSOs, approveSO, convertSOtoPO } from "../api";
 import { Link, useNavigate } from 'react-router-dom';
 
 export default function SOList() {

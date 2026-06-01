@@ -203,4 +203,11 @@ export const exportMismatchesUrl = () => `${BASE_URL || window.location.origin}/
 export const generateDocument = (documentType: string, referenceId: string) => api.post(`/documents/generate/${documentType}/${referenceId}`);
 export const getLatestDocumentUrl = (documentType: string, referenceId: string) => api.get(`/documents/${documentType}/${referenceId}/latest`);
 
+// --- Named Proxy API Helper Exports ---
+export const get = (url: string, config?: any) => api.get(url, config);
+export const post = (url: string, data?: any, config?: any) => api.post(url, data, config);
+export const put = (url: string, data?: any, config?: any) => api.put(url, data, config);
+export const del = (url: string, config?: any) => api.delete(url, config);
+export const patch = (url: string, data?: any, config?: any) => api.patch(url, data, config);
+
 export default api;

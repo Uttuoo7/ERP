@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { useAuthStore } from '../../store/authStore';
+import { useAuthStore } from "../../store/authStore";
 
 function SidebarLink({ to, children }: { to: string; children: React.ReactNode }) {
   const location = useLocation();
@@ -59,28 +59,30 @@ export function Sidebar() {
         )}
 
         {isAdmin && (
-          <div>
-            <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-3 mb-2">Administration</div>
-            <div className="space-y-0.5">
-              <SidebarLink to="/masters">Master Data Engine</SidebarLink>
-              <SidebarLink to="/workflows/builder">Workflows Setup</SidebarLink>
-              <SidebarLink to="/sla/builder">SLA Automation Builder</SidebarLink>
-              <SidebarLink to="/sla/escalations">Escalation Console</SidebarLink>
-              <SidebarLink to="/rbac/matrix">RBAC Roles Matrix</SidebarLink>
-              <SidebarLink to="/integrations">Enterprise Integrations</SidebarLink>
-              <SidebarLink to="/data-migration/wizard">Data Migration Wizard</SidebarLink>
-              <SidebarLink to="/data-migration/history">Import Audit Logs</SidebarLink>
+          <>
+            <div>
+              <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest px-3 mb-2">Administration</div>
+              <div className="space-y-0.5">
+                <SidebarLink to="/masters">Master Data Engine</SidebarLink>
+                <SidebarLink to="/workflows/builder">Workflows Setup</SidebarLink>
+                <SidebarLink to="/sla/builder">SLA Automation Builder</SidebarLink>
+                <SidebarLink to="/sla/escalations">Escalation Console</SidebarLink>
+                <SidebarLink to="/rbac/matrix">RBAC Roles Matrix</SidebarLink>
+                <SidebarLink to="/integrations">Enterprise Integrations</SidebarLink>
+                <SidebarLink to="/data-migration/wizard">Data Migration Wizard</SidebarLink>
+                <SidebarLink to="/data-migration/history">Import Audit Logs</SidebarLink>
+              </div>
             </div>
-          </div>
-          
-          <div className="pt-2">
-            <h3 className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Observability</h3>
-            <div className="space-y-0.5">
-              <SidebarLink to="/observability/health">System Health</SidebarLink>
-              <SidebarLink to="/observability/queues">Queue Monitor</SidebarLink>
-              <SidebarLink to="/observability/api-errors">Error Analytics</SidebarLink>
+            
+            <div className="pt-2">
+              <h3 className="px-4 text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Observability</h3>
+              <div className="space-y-0.5">
+                <SidebarLink to="/observability/health">System Health</SidebarLink>
+                <SidebarLink to="/observability/queues">Queue Monitor</SidebarLink>
+                <SidebarLink to="/observability/api-errors">Error Analytics</SidebarLink>
+              </div>
             </div>
-          </div>
+          </>
         )}
 
         {(isProcurement || isEmployee) && (

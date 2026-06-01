@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   GitCommit, ArrowRight, ArrowLeft, RefreshCw, FileText, CheckCircle, Clock, XCircle, ArrowUpRight, Loader2
 } from 'lucide-react';
-import { getDocumentLineage } from '../api';
+import { getDocumentLineage } from "../api";
 
 interface TimelineProps {
   docType: string;

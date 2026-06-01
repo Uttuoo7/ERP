@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getItems } from '../api';
+import { getItems } from "../api";
 import AddItemForm from '../components/AddItemForm';
 import EditItemModal from '../components/EditItemModal';
-import { useAuth } from '../AuthContext';
+import { useAuth } from "../AuthContext";
 
 interface Item {
   id: string;

@@ -4,7 +4,7 @@ import logging
 from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
-from . import models
+from . import models, commitment_engine
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +71,20 @@ def initialize_workflow(
     Spins up a new workflow instance for an entity and dispatches the first pending approval task.
     """
     # 1. Load active definition for the target module
-    definition = db.query(models.WorkflowDefinition)\
-        .filter(models.WorkflowDefinition.module == module, models.WorkflowDefinition.is_active == True)\
-        .first()
+    definition = None
+    category_id = context.get("category_id")
+    if category_id:
+        # Check if category has a mapped workflow definition
+        cat = db.query(models.ProcurementCategory).filter(models.ProcurementCategory.id == category_id).first()
+        if cat and cat.workflow_definition_id:
+            definition = db.query(models.WorkflowDefinition)\
+                .filter(models.WorkflowDefinition.id == cat.workflow_definition_id, models.WorkflowDefinition.is_active == True)\
+                .first()
+                
+    if not definition:
+        definition = db.query(models.WorkflowDefinition)\
+            .filter(models.WorkflowDefinition.module == module, models.WorkflowDefinition.is_active == True)\
+            .first()
 
     if not definition:
         logger.info(f"No active workflow definition configured for module {module}. Auto-approving.")
@@ -244,6 +255,40 @@ def finalize_entity_approval(module: str, entity_id: uuid.UUID, db: Session):
         if po:
             po.status = models.POStatus.ISSUED # Auto-progress PO to ISSUED
             logger.info(f"Purchase Order {entity_id} status updated to ISSUED via workflow engine callback.")
+            
+            # Transition Planned to Committed
+            budget_context = {"department_id": po.department_id, "category_id": po.category_id, "project_id": None, "cost_center_id": None}
+            commitment_engine.transition_planned_to_committed(db, float(po.total_amount), budget_context, "PO", po.id)
+
+            # Fire Async Document Generation Task
+            try:
+                from .tasks.document_tasks import async_generate_po_document
+                async_generate_po_document.delay(str(po.id))
+                logger.info(f"Dispatched document generation task for PO {po.id}")
+            except Exception as e:
+                logger.error(f"Failed to dispatch PO document generation: {e}")
+    elif module == "GOODS_RECEIPT_NOTE":
+        grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == entity_id).first()
+        if grn:
+            grn.status = "APPROVED"
+            logger.info(f"GRN {entity_id} status updated to APPROVED via workflow engine callback.")
+    elif module == "AP_VOUCHER":
+        ap = db.query(models.AccountsPayable).filter(models.AccountsPayable.id == entity_id).first()
+        if ap:
+            ap.approval_status = "APPROVED"
+            logger.info(f"AP Voucher {entity_id} status updated to APPROVED.")
+    elif module == "PAYMENT_VOUCHER":
+        payment = db.query(models.VendorPayment).filter(models.VendorPayment.id == entity_id).first()
+        if payment:
+            # Here we just mark it APPROVED. The release hook is called separately or we can call it here.
+            from .payment_services import finalize_payment_release
+            try:
+                payment.approval_status = "APPROVED"
+                db.commit()
+                finalize_payment_release(db, payment.id)
+                logger.info(f"Payment Voucher {entity_id} approved and funds released.")
+            except Exception as e:
+                logger.error(f"Failed to release funds for Payment {entity_id}: {e}")
     elif module == "INTERNAL_SALES_ORDER":
         so = db.query(models.InternalSalesOrder).filter(models.InternalSalesOrder.id == entity_id).first()
         if so:
@@ -263,6 +308,25 @@ def finalize_entity_rejection(module: str, entity_id: uuid.UUID, db: Session):
         po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == entity_id).first()
         if po:
             po.status = models.POStatus.CLOSED # Mark as closed or rejected
+            # Revert committed budget if needed, but since it was pending approval, it means it wasn't committed yet.
+            # But the PO took budget from PR. We should release the planned budget.
+            budget_context = {"department_id": po.department_id, "category_id": po.category_id, "project_id": None, "cost_center_id": None}
+            commitment_engine.release_budget(db, float(po.total_amount), budget_context, "PO", po.id)
+            
+    elif module == "AP_VOUCHER":
+        ap = db.query(models.AccountsPayable).filter(models.AccountsPayable.id == entity_id).first()
+        if ap:
+            ap.approval_status = "REJECTED"
+            
+    elif module == "PAYMENT_VOUCHER":
+        payment = db.query(models.VendorPayment).filter(models.VendorPayment.id == entity_id).first()
+        if payment:
+            payment.approval_status = "REJECTED"
+            # Unlink allocations
+            allocations = db.query(models.PaymentAllocation).filter(models.PaymentAllocation.payment_id == payment.id).all()
+            for alloc in allocations:
+                db.delete(alloc)
+            
     elif module == "INTERNAL_SALES_ORDER":
         so = db.query(models.InternalSalesOrder).filter(models.InternalSalesOrder.id == entity_id).first()
         if so:
@@ -271,6 +335,10 @@ def finalize_entity_rejection(module: str, entity_id: uuid.UUID, db: Session):
         pr = db.query(models.PurchaseRequisition).filter(models.PurchaseRequisition.id == entity_id).first()
         if pr:
             pr.status = "REJECTED"
+            logger.info(f"Purchase Requisition {entity_id} status updated to REJECTED.")
+            
+            budget_context = {"department_id": pr.department_id, "category_id": pr.category_id, "project_id": pr.project_id, "cost_center_id": pr.cost_center_id}
+            commitment_engine.release_budget(db, float(sum(line.estimated_price * line.quantity for line in pr.line_items)), budget_context, "PR", pr.id)
 
 # -- Extensible Notification Hub Hook --
 

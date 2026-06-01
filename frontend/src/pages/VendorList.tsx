@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { getVendors } from '../api';
+import { getVendors } from "../api";
 import AddVendorForm from '../components/AddVendorForm';
 import EditVendorModal from '../components/EditVendorModal';
-import { useAuth } from '../AuthContext';
+import { useAuth } from "../AuthContext";
 
 interface Vendor {
   id: string;

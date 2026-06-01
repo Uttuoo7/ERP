@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Sparkles, Award, Star, Clock, CheckCircle, ShieldCheck, DollarSign
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getRFQComparison, selectRFQVendor } from '../api';
+import { getRFQComparison, selectRFQVendor } from "../api";
 
 interface ComparisonItem {
   rfq_line_id: string;

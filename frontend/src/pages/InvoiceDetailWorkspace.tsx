@@ -6,7 +6,7 @@ import {
 import toast from 'react-hot-toast';
 import { 
   getInvoice, runInvoiceMatch, resolveInvoiceVariance, postInvoiceGL, getWorkflowHistory, getDocumentLineage 
-} from '../api';
+} from "../api";
 
 const InvoiceDetailWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();

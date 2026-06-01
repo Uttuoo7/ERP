@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { createVendor } from '../api';
+import { createVendor } from "../api";
 
 export default function AddVendorForm({ onSuccess }: { onSuccess?: () => void }) {
   const [formData, setFormData] = useState({

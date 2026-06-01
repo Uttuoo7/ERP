@@ -3,7 +3,7 @@ import {
   RefreshCw, Layers, CheckCircle, AlertCircle, FileText, ArrowRight, Loader2, Sparkles, Send, Copy, FileCode
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getTallySyncQueue, syncAllTally } from '../api';
+import { getTallySyncQueue, syncAllTally } from "../api";
 
 const TallySyncQueue: React.FC = () => {
   const [loading, setLoading] = useState(false);

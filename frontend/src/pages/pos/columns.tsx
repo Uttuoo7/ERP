@@ -1,5 +1,5 @@
 import React from 'react';
-import { ColumnDef } from '@tanstack/react-table';
+import type { ColumnDef } from '@tanstack/react-table';
 import { Link } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 

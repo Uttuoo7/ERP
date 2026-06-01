@@ -16,3 +16,5 @@ websockets
 r e p o r t l a b  
 pandas
 openpyxl  
+gunicorn
+psutil

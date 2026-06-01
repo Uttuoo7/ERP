@@ -4,7 +4,7 @@ import {
   Plus, Search, Filter, RefreshCw, FileText, CheckCircle, Clock, XCircle, ArrowRight, Loader2, DollarSign, Layers
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getRequisitions, duplicateRequisition } from '../api';
+import { getRequisitions, duplicateRequisition } from "../api";
 
 interface Requisition {
   id: string;

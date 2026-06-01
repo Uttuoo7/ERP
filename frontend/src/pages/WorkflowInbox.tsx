@@ -3,7 +3,7 @@ import {
   CheckCircle, XCircle, Clock, MessageSquare, Shield, ChevronRight, Loader2, Inbox, History, ArrowRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getWorkflowInbox, actionWorkflowTask, getWorkflowHistory } from '../api';
+import { getWorkflowInbox, actionWorkflowTask, getWorkflowHistory } from "../api";
 
 interface Task {
   id: string;

@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Save, ShieldCheck, ShieldAlert, Sparkles, HelpCircle, CheckCircle, XCircle, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getGRN, submitGRNQC } from '../api';
+import { getGRN, submitGRNQC } from "../api";
 
 interface GRNLine {
   id: string;

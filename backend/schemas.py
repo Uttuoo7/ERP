@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional, Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
 # -- Shared Enums --
 from .models import POStatus, InvoiceStatus, Role
@@ -21,6 +21,13 @@ class LoginRequest(BaseModel):
     email: str
     password: str
 
+class SaaSOnboardingRequest(BaseModel):
+    company_name: str
+    domain: str
+    admin_username: str
+    admin_email: EmailStr
+    admin_password: str
+
 # -- Users --
 class UserBase(BaseModel):
     username: str
@@ -37,14 +44,30 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
 
 # -- Inventory Ledger --
-class InventoryLedgerBase(BaseModel):
-    quantity_on_hand: int
-    quantity_reserved: int
-    reorder_point: int
-
-class InventoryLedgerResponse(InventoryLedgerBase):
+class InventoryStockResponse(BaseModel):
+    id: uuid.UUID
     item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    current_stock: int
+    reserved_stock: int
+    available_stock: int
     last_updated: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class StockLedgerResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    transaction_type: str
+    reference_type: str
+    reference_id: uuid.UUID
+    qty_in: int
+    qty_out: int
+    balance_after: int
+    unit_rate: Decimal
+    total_value: Decimal
+    remarks: Optional[str] = None
+    created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
 # -- Items --
@@ -53,22 +76,36 @@ class ItemBase(BaseModel):
     name: str
     description: Optional[str] = None
     unit_price: Decimal = Field(decimal_places=2)
+    standard_rate: Decimal = Field(default=0, decimal_places=2)
     default_vendor_id: Optional[uuid.UUID] = None
-    reorder_point: int = 0
+    preferred_vendor_id: Optional[uuid.UUID] = None
     hsn_code: Optional[str] = None
     category: str
+    subcategory: Optional[str] = None
     uom: str
     gst_rate: Decimal = Field(decimal_places=2)
     mpn: Optional[str] = None
     oem: Optional[str] = None
     footprint: Optional[str] = None
     bin_location: Optional[str] = None
+    reorder_level: int = 0
+    minimum_stock: int = 0
+    maximum_stock: int = 0
+    is_active: bool = True
 
 class ItemCreate(ItemBase):
     pass
 
 class ItemUpdate(ItemBase):
     pass
+
+class InventoryLedgerResponse(BaseModel):
+    id: uuid.UUID
+    quantity_on_hand: int
+    quantity_reserved: int
+    reorder_point: int
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class ItemResponse(ItemBase):
     id: uuid.UUID
@@ -109,6 +146,28 @@ class BaseMasterResponse(BaseModel):
     is_active: bool
     is_deleted: bool
     model_config = ConfigDict(from_attributes=True)
+
+# -- Procurement Categories --
+class ProcurementCategoryBase(BaseModel):
+    name: str
+    code: str
+    prefix: str
+    description: Optional[str] = None
+    parent_id: Optional[uuid.UUID] = None
+    icon: Optional[str] = None
+    color: Optional[str] = None
+    default_department_id: Optional[uuid.UUID] = None
+    default_warehouse_id: Optional[uuid.UUID] = None
+    workflow_definition_id: Optional[uuid.UUID] = None
+
+class ProcurementCategoryCreate(ProcurementCategoryBase):
+    pass
+
+class ProcurementCategoryUpdate(ProcurementCategoryBase):
+    pass
+
+class ProcurementCategoryResponse(ProcurementCategoryBase, BaseMasterResponse):
+    pass
 
 # -- Departments --
 class DepartmentBase(BaseModel):
@@ -178,12 +237,20 @@ class EmployeeResponse(EmployeeBase, BaseMasterResponse):
 
 # -- Customers --
 class CustomerBase(BaseModel):
-    customer_number: str
-    name: str
-    email: str
-    phone: Optional[str] = None
+    customer_code: str
+    company_name: str
     gstin: Optional[str] = None
-    pan: Optional[str] = None
+    pan_number: Optional[str] = None
+    billing_address: Optional[str] = None
+    shipping_address: Optional[str] = None
+    state: Optional[str] = None
+    country: str = "India"
+    contact_person: Optional[str] = None
+    contact_email: Optional[str] = None
+    contact_number: Optional[str] = None
+    credit_limit: float = 0.0
+    payment_terms: Optional[str] = None
+    customer_type: str = "RETAIL"
 
 class CustomerCreate(CustomerBase):
     pass
@@ -196,17 +263,20 @@ class CustomerResponse(CustomerBase, BaseMasterResponse):
 
 # -- Warehouses --
 class WarehouseBase(BaseModel):
+    warehouse_code: str
     name: str
-    contact_name: str
-    company_name: str
-    address_line1: str
-    address_line2: str
+    contact_person: Optional[str] = None
+    contact_number: Optional[str] = None
+    company_name: Optional[str] = None
+    address_line1: Optional[str] = None
+    address_line2: Optional[str] = None
     landmark: Optional[str] = None
-    city: str
-    state: str
-    pin_code: str
-    phone: str
+    city: Optional[str] = None
+    state: Optional[str] = None
+    pin_code: Optional[str] = None
+    phone: Optional[str] = None
     gstin: Optional[str] = None
+    is_active: bool = True
 
 class WarehouseResponse(WarehouseBase):
     id: uuid.UUID
@@ -221,6 +291,7 @@ class POLineItemBase(BaseModel):
     rfq_line_id: Optional[uuid.UUID] = None
     taxes: Optional[Decimal] = Field(default=0.0, decimal_places=2)
     discounts: Optional[Decimal] = Field(default=0.0, decimal_places=2)
+    hsn_code: Optional[str] = None
     delivery_date: Optional[datetime] = None
     remaining_quantity: Optional[Decimal] = Field(default=0.0, decimal_places=4)
     description: Optional[str] = None
@@ -254,6 +325,12 @@ class PurchaseOrderBase(BaseModel):
     tax_summary: Optional[str] = "0.0"
     discount_summary: Optional[str] = "0.0"
     total_amount: Decimal = Field(default=0, decimal_places=2)
+    
+    cgst: Decimal = Field(default=0, decimal_places=2)
+    sgst: Decimal = Field(default=0, decimal_places=2)
+    igst: Decimal = Field(default=0, decimal_places=2)
+    freight_tax: Decimal = Field(default=0, decimal_places=2)
+    commercial_terms_id: Optional[uuid.UUID] = None
     
     delivery_type: str = "Warehouse"
     warehouse_id: Optional[uuid.UUID] = None
@@ -303,11 +380,14 @@ class GRNLineItemBase(BaseModel):
     po_line_item_id: uuid.UUID
     item_id: uuid.UUID
     quantity_ordered: int
-    quantity_received: int
-    quantity_accepted: int = 0
-    quantity_rejected: int = 0
-    quantity_damaged: int = 0
-    remaining_quantity: Decimal = 0.0
+    previously_received_qty: int = 0
+    quantity_received: int = 0
+    accepted_qty: int = 0
+    rejected_qty: int = 0
+    pending_qty: int = 0
+    unit_price: Decimal = Field(default=0, decimal_places=2)
+    gst_percent: Decimal = Field(default=0, decimal_places=2)
+    total: Decimal = Field(default=0, decimal_places=2)
     batch_number: Optional[str] = None
     serial_numbers: Optional[str] = None
     expiry_date: Optional[datetime] = None
@@ -335,11 +415,20 @@ class GoodsReceiptNoteBase(BaseModel):
     vendor_id: Optional[uuid.UUID] = None
     warehouse_id: Optional[uuid.UUID] = None
     received_by_id: Optional[uuid.UUID] = None
-    vehicle_details: Optional[str] = None
-    delivery_challan_number: str
+    transporter_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    invoice_reference: Optional[str] = None
+    eway_bill_number: Optional[str] = None
+    delivery_challan_number: Optional[str] = None
     status: str
-    workflow_state: str
+    subtotal: Decimal = Field(default=0, decimal_places=2)
+    cgst: Decimal = Field(default=0, decimal_places=2)
+    sgst: Decimal = Field(default=0, decimal_places=2)
+    igst: Decimal = Field(default=0, decimal_places=2)
+    total_amount: Decimal = Field(default=0, decimal_places=2)
     remarks: Optional[str] = None
+    revision_number: int = 0
+    pdf_snapshot_path: Optional[str] = None
     inspected_by_id: Optional[uuid.UUID] = None
     inspection_date: Optional[datetime] = None
     inspection_remarks: Optional[str] = None
@@ -415,8 +504,14 @@ class InvoiceBase(BaseModel):
     due_date: Optional[datetime] = None
     total_amount: Decimal = Field(decimal_places=2)
     gst_amount: Decimal = Field(default=0, decimal_places=2)
-    tds_deducted: Decimal = Field(default=0, decimal_places=2)
     discount_amount: Decimal = Field(default=0, decimal_places=2)
+    
+    cgst: Decimal = Field(default=0, decimal_places=2)
+    sgst: Decimal = Field(default=0, decimal_places=2)
+    igst: Decimal = Field(default=0, decimal_places=2)
+    freight_tax: Decimal = Field(default=0, decimal_places=2)
+    commercial_terms_id: Optional[uuid.UUID] = None
+    irn_number: Optional[str] = None
     workflow_state: Optional[str] = "DRAFT"
     remarks: Optional[str] = None
 
@@ -579,6 +674,46 @@ class ApprovalTaskResponse(BaseModel):
     step: WorkflowStepResponse
     model_config = ConfigDict(from_attributes=True)
 
+# --- Commercial Document & Term Schemas ---
+class CommercialTermsTemplateBase(BaseModel):
+    name: str
+    payment_terms: str
+    freight_terms: str
+    delivery_terms: str
+    warranty_clauses: Optional[str] = None
+    insurance_clauses: Optional[str] = None
+    penalty_clauses: Optional[str] = None
+    validity_clauses: Optional[str] = None
+    dispatch_instructions: Optional[str] = None
+
+class CommercialTermsTemplateCreate(CommercialTermsTemplateBase):
+    pass
+
+class CommercialTermsTemplateResponse(CommercialTermsTemplateBase):
+    id: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+class VendorCommercialProfileBase(BaseModel):
+    vendor_id: uuid.UUID
+    account_number: Optional[str] = None
+    branch_name: Optional[str] = None
+    upi_id: Optional[str] = None
+    swift_code: Optional[str] = None
+    freight_preferences: Optional[str] = None
+    delivery_terms: Optional[str] = None
+    default_commercial_terms_id: Optional[uuid.UUID] = None
+    state_code: Optional[str] = None
+
+class VendorCommercialProfileCreate(VendorCommercialProfileBase):
+    pass
+
+class VendorCommercialProfileResponse(VendorCommercialProfileBase):
+    id: uuid.UUID
+    default_terms: Optional[CommercialTermsTemplateResponse] = None
+    model_config = ConfigDict(from_attributes=True)
+
+# --- End Commercial Document Schemas ---
+
 class WorkflowHistoryResponse(BaseModel):
     id: uuid.UUID
     workflow_instance_id: uuid.UUID
@@ -651,6 +786,7 @@ class PurchaseRequisitionBase(BaseModel):
     department_id: Optional[uuid.UUID] = None
     project_id: Optional[uuid.UUID] = None
     cost_center_id: Optional[uuid.UUID] = None
+    category_id: Optional[uuid.UUID] = None
     priority: str = "MEDIUM"
     required_date: datetime
     delivery_location_id: Optional[uuid.UUID] = None
@@ -1051,8 +1187,583 @@ class AuditSecurityLogResponse(BaseModel):
     timestamp: datetime
     model_config = ConfigDict(from_attributes=True)
 
+# ==========================================
+# BUDGET GOVERNANCE SCHEMAS
+# ==========================================
+
+class BudgetConsumptionResponse(BaseModel):
+    id: uuid.UUID
+    pending_approval_amount: Decimal
+    committed_amount: Decimal
+    accrued_amount: Decimal
+    consumed_amount: Decimal
+    paid_amount: Decimal
+    last_recalculated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class BudgetAllocationBase(BaseModel):
+    department_id: Optional[uuid.UUID] = None
+    project_id: Optional[uuid.UUID] = None
+    cost_center_id: Optional[uuid.UUID] = None
+    category_id: Optional[uuid.UUID] = None
+    branch_id: Optional[uuid.UUID] = None
+    allocated_amount: Decimal
+    soft_limit_percent: Decimal = 80.00
+    hard_limit_percent: Decimal = 100.00
+    escalate_to_role: Optional[str] = None
+
+class BudgetAllocationCreate(BudgetAllocationBase):
+    pass
+
+class BudgetAllocationResponse(BudgetAllocationBase):
+    id: uuid.UUID
+    budget_master_id: uuid.UUID
+    consumption: Optional[BudgetConsumptionResponse] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class BudgetMasterBase(BaseModel):
+    name: str
+    fiscal_year: str
+    status: str = "DRAFT"
+    total_budget: Decimal
+
+class BudgetMasterCreate(BudgetMasterBase):
+    allocations: List[BudgetAllocationCreate] = []
+
+class BudgetMasterUpdate(BaseModel):
+    name: Optional[str] = None
+    fiscal_year: Optional[str] = None
+    status: Optional[str] = None
+    total_budget: Optional[Decimal] = None
+
+class BudgetMasterResponse(BudgetMasterBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    allocations: List[BudgetAllocationResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class BudgetAdjustmentCreate(BaseModel):
+    adjustment_amount: Decimal
+    reason: str
+
+class BudgetAdjustmentResponse(BaseModel):
+    id: uuid.UUID
+    allocation_id: uuid.UUID
+    adjustment_amount: Decimal
+    reason: str
+    adjusted_by_id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
 # Rebuild Pydantic forward references
 RFQResponse.model_rebuild()
 RFQComparisonMatrixResponse.model_rebuild()
 RFQComparisonItem.model_rebuild()
 RFQComparisonVendor.model_rebuild()
+
+# ==========================================
+# ACCOUNTS PAYABLE & VENDOR FINANCE SCHEMAS
+# ==========================================
+
+class TDSConfigurationBase(BaseModel):
+    section_code: str
+    description: str
+    percentage: Decimal = Field(decimal_places=2)
+    threshold_limit: Decimal = Field(decimal_places=2)
+    is_active: bool = True
+
+class TDSConfigurationResponse(TDSConfigurationBase):
+    id: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+class VendorLedgerResponse(BaseModel):
+    id: uuid.UUID
+    vendor_id: uuid.UUID
+    transaction_date: datetime
+    transaction_type: str
+    reference_type: str
+    reference_id: uuid.UUID
+    debit_amount: Decimal
+    credit_amount: Decimal
+    running_balance: Decimal
+    remarks: Optional[str] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class AccountsPayableBase(BaseModel):
+    ap_number: str
+    vendor_id: uuid.UUID
+    invoice_id: Optional[uuid.UUID] = None
+    po_id: Optional[uuid.UUID] = None
+    grn_id: Optional[uuid.UUID] = None
+    invoice_amount: Decimal
+    gst_amount: Decimal
+    tds_amount: Decimal
+    payable_amount: Decimal
+    paid_amount: Decimal
+    balance_amount: Decimal
+    due_date: Optional[datetime] = None
+    payment_status: str
+    approval_status: str
+    remarks: Optional[str] = None
+
+class AccountsPayableResponse(AccountsPayableBase):
+    id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class VendorPaymentBase(BaseModel):
+    payment_number: str
+    vendor_id: uuid.UUID
+    payment_date: datetime
+    payment_method: str
+    bank_name: Optional[str] = None
+    account_reference: Optional[str] = None
+    utr_number: Optional[str] = None
+    cheque_number: Optional[str] = None
+    payment_amount: Decimal
+    tds_deducted: Decimal
+    narration: Optional[str] = None
+    approval_status: str
+
+class VendorPaymentCreate(BaseModel):
+    vendor_id: uuid.UUID
+    payment_method: str
+    bank_name: Optional[str] = None
+    account_reference: Optional[str] = None
+    payment_amount: Decimal
+    narration: Optional[str] = None
+    allocations: List[dict] # {ap_id: uuid, amount: Decimal}
+
+class VendorPaymentResponse(VendorPaymentBase):
+    id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class InvoiceMismatchResponse(BaseModel):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    mismatch_type: str
+    expected_value: str
+    actual_value: str
+    variance: Decimal
+    severity: str
+    remarks: Optional[str] = None
+    resolved: bool
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class PaymentAllocationResponse(BaseModel):
+    id: uuid.UUID
+    payment_id: uuid.UUID
+    accounts_payable_id: uuid.UUID
+    allocated_amount: Decimal
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class AuditTrailResponse(BaseModel):
+    id: uuid.UUID
+    entity_type: str
+    entity_id: uuid.UUID
+    action: str
+    old_values: Optional[str] = None
+    new_values: Optional[str] = None
+    performed_at: datetime
+    ip_address: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+class ImportHistoryBase(BaseModel):
+    module_name: str
+    file_name: str
+    total_rows: int
+    successful_rows: int
+    failed_rows: int
+    status: str
+    error_report_path: Optional[str] = None
+
+class ImportHistoryResponse(ImportHistoryBase):
+    id: uuid.UUID
+    uploaded_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+# =========================================================================
+# CRM & SALES ERP MODULE
+# =========================================================================
+
+class LeadBase(BaseModel):
+    company_name: str
+    contact_person: str
+    email: str
+    phone: str
+    source: Optional[str] = None
+    industry: Optional[str] = None
+    expected_value: float = 0.0
+    stage: str = 'NEW'
+    remarks: Optional[str] = None
+    follow_up_date: Optional[datetime] = None
+
+class LeadCreate(LeadBase):
+    pass
+
+class LeadResponse(LeadBase):
+    id: uuid.UUID
+    lead_number: str
+    assigned_to: Optional[uuid.UUID]
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class FollowUpActivityBase(BaseModel):
+    lead_id: uuid.UUID
+    activity_type: str
+    notes: str
+
+class FollowUpActivityResponse(FollowUpActivityBase):
+    id: uuid.UUID
+    created_at: datetime
+    created_by: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+class SalesQuotationLineItemBase(BaseModel):
+    item_id: uuid.UUID
+    description: Optional[str] = None
+    qty: float
+    unit_price: float
+    gst_percent: float
+    discount_percent: float = 0.0
+
+class SalesQuotationCreate(BaseModel):
+    customer_id: uuid.UUID
+    lead_id: Optional[uuid.UUID] = None
+    validity_date: datetime
+    remarks: Optional[str] = None
+    line_items: List[SalesQuotationLineItemBase]
+
+class SalesOrderLineItemBase(BaseModel):
+    item_id: uuid.UUID
+    ordered_qty: float
+    rate: float
+    gst_percent: float
+
+class SalesOrderCreate(BaseModel):
+    quotation_id: Optional[uuid.UUID] = None
+    customer_id: uuid.UUID
+    delivery_date: datetime
+    line_items: List[SalesOrderLineItemBase]
+
+class DeliveryChallanLineItemBase(BaseModel):
+    sales_order_line_item_id: uuid.UUID
+    item_id: uuid.UUID
+    dispatched_qty: float
+    unit_price: float
+
+class DeliveryChallanCreate(BaseModel):
+    sales_order_id: uuid.UUID
+    customer_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    transporter_name: Optional[str] = None
+    vehicle_number: Optional[str] = None
+    driver_contact: Optional[str] = None
+    eway_bill_number: Optional[str] = None
+    remarks: Optional[str] = None
+    line_items: List[DeliveryChallanLineItemBase]
+
+class AccountsReceivableResponse(BaseModel):
+    id: uuid.UUID
+    ar_number: str
+    customer_id: uuid.UUID
+    invoice_id: Optional[uuid.UUID]
+    invoice_amount: float
+    received_amount: float
+    balance_amount: float
+    due_date: datetime
+    payment_status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class CustomerLedgerResponse(BaseModel):
+    id: uuid.UUID
+    customer_id: uuid.UUID
+    transaction_type: str
+    reference_type: str
+    reference_id: uuid.UUID
+    debit_amount: float
+    credit_amount: float
+    running_balance: float
+    remarks: Optional[str]
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class CustomerPaymentCreate(BaseModel):
+    customer_id: uuid.UUID
+    payment_method: str
+    bank_reference: Optional[str] = None
+    amount: float
+    allocations: List[Dict[str, float]] # [{'ar_id': uuid, 'amount': float}]
+
+
+
+# =========================================================================
+# MANUFACTURING & PRODUCTION MODULE
+# =========================================================================
+
+class BOMLineItemBase(BaseModel):
+    raw_material_item_id: uuid.UUID
+    required_qty: float
+    wastage_percent: float = 0.0
+
+class BOMCreate(BaseModel):
+    finished_good_item_id: uuid.UUID
+    version: str = 'V1.0'
+    description: Optional[str] = None
+    labor_cost: float = 0.0
+    overhead_cost: float = 0.0
+    line_items: List[BOMLineItemBase]
+
+class BOMResponse(BaseModel):
+    id: uuid.UUID
+    bom_number: str
+    status: str
+    total_cost: float
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class ProductionOrderCreate(BaseModel):
+    sales_order_id: Optional[uuid.UUID] = None
+    bom_id: uuid.UUID
+    production_qty: float
+    planned_start_date: Optional[datetime] = None
+    planned_end_date: Optional[datetime] = None
+    remarks: Optional[str] = None
+
+class WorkOrderCreate(BaseModel):
+    production_order_id: uuid.UUID
+    operation_name: str
+    workstation_id: Optional[uuid.UUID] = None
+    planned_hours: float = 0.0
+    remarks: Optional[str] = None
+
+class MRPRecommendationResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    required_qty: float
+    available_qty: float
+    shortage_qty: float
+    recommended_procurement_qty: float
+    recommendation_type: str
+    status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class QualityInspectionCreate(BaseModel):
+    production_order_id: uuid.UUID
+    inspected_qty: float
+    accepted_qty: float
+    rejected_qty: float
+    rejection_reason: Optional[str] = None
+    remarks: Optional[str] = None
+
+
+
+# =========================================================================
+# WORKFLOW AUTOMATION & TASK ENGINE MODULE
+# =========================================================================
+
+class NotificationBase(BaseModel):
+    title: str
+    message: str
+    notification_type: str
+    priority: str = 'MEDIUM'
+    entity_type: Optional[str] = None
+    entity_id: Optional[uuid.UUID] = None
+    assigned_to: uuid.UUID
+    action_url: Optional[str] = None
+    expires_at: Optional[datetime] = None
+
+class NotificationCreate(NotificationBase):
+    pass
+
+class NotificationResponse(NotificationBase):
+    id: uuid.UUID
+    is_read: bool
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class TaskBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    task_type: str
+    related_entity_type: Optional[str] = None
+    related_entity_id: Optional[uuid.UUID] = None
+    assigned_to: uuid.UUID
+    due_date: Optional[datetime] = None
+    priority: str = 'MEDIUM'
+    remarks: Optional[str] = None
+
+class TaskCreate(TaskBase):
+    pass
+
+class TaskResponse(TaskBase):
+    id: uuid.UUID
+    task_number: str
+    task_status: str
+    assigned_by: Optional[uuid.UUID] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkflowRuleCreate(BaseModel):
+    rule_name: str
+    module_name: str
+    trigger_event: str
+    condition_json: str
+    action_json: str
+    is_active: bool = True
+
+class WorkflowRuleResponse(WorkflowRuleCreate):
+    id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class BackgroundJobResponse(BaseModel):
+    id: uuid.UUID
+    job_name: str
+    module_name: str
+    job_status: str
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    error_message: Optional[str]
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+# =========================================================================
+# INTERNAL HRMS & MAINTENANCE MODULE
+# =========================================================================
+
+class EmployeeBase(BaseModel):
+    employee_code: str
+    first_name: str
+    last_name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    department_id: Optional[uuid.UUID] = None
+    designation: str
+    employment_type: str
+    status: str = 'ACTIVE'
+
+class EmployeeCreate(EmployeeBase):
+    pass
+
+class EmployeeResponse(EmployeeBase):
+    id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class AttendanceBase(BaseModel):
+    employee_id: uuid.UUID
+    attendance_date: datetime
+    punch_in: Optional[datetime] = None
+    punch_out: Optional[datetime] = None
+    attendance_status: str
+
+class AttendanceCreate(AttendanceBase):
+    pass
+
+class LeaveRequestBase(BaseModel):
+    employee_id: uuid.UUID
+    leave_type_id: uuid.UUID
+    start_date: datetime
+    end_date: datetime
+    total_days: float
+    reason: str
+
+class LeaveRequestCreate(LeaveRequestBase):
+    pass
+
+class LeaveRequestResponse(LeaveRequestBase):
+    id: uuid.UUID
+    approval_status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class AssetBase(BaseModel):
+    asset_code: str
+    asset_name: str
+    asset_type: str
+    department_id: Optional[uuid.UUID] = None
+    asset_status: str = 'AVAILABLE'
+
+class AssetCreate(AssetBase):
+    pass
+
+class MaintenanceRequestBase(BaseModel):
+    machine_asset_id: uuid.UUID
+    reported_by: uuid.UUID
+    issue_type: str
+    priority: str = 'MEDIUM'
+    description: str
+
+class MaintenanceRequestCreate(MaintenanceRequestBase):
+    pass
+
+class MaintenanceRequestResponse(MaintenanceRequestBase):
+    id: uuid.UUID
+    request_number: str
+    status: str
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+
+# =========================================================================
+# ENTERPRISE BI & ANALYTICS MODULE
+# =========================================================================
+
+class AnalyticsSnapshotBase(BaseModel):
+    snapshot_type: str
+    metrics_json: str
+
+class AnalyticsSnapshotCreate(AnalyticsSnapshotBase):
+    pass
+
+class AnalyticsSnapshotResponse(AnalyticsSnapshotBase):
+    id: uuid.UUID
+    snapshot_date: datetime
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class BusinessInsightBase(BaseModel):
+    module_name: str
+    insight_type: str
+    message: str
+    severity: str = 'INFO'
+    data_json: Optional[str] = None
+    is_active: bool = True
+
+class BusinessInsightCreate(BusinessInsightBase):
+    pass
+
+class BusinessInsightResponse(BusinessInsightBase):
+    id: uuid.UUID
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+class SystemHealthMetricResponse(BaseModel):
+    id: uuid.UUID
+    cpu_usage: float
+    memory_usage: float
+    db_status: str
+    redis_status: str
+    celery_queue_depth: int
+    websocket_pool_count: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+

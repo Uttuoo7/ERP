@@ -1,90 +1,141 @@
-import uuid
-import logging
-from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from . import database, dependencies, models, schemas, grn_services
+from typing import List
+import uuid
+import logging
 
-router = APIRouter()
+from . import models, schemas, database, dependencies, workflow_engine, numbering_engine, inventory_services
+
 logger = logging.getLogger(__name__)
 
-@router.get("/", response_model=List[schemas.GoodsReceiptNoteResponse])
-def get_goods_receipt_notes(
-    po_id: Optional[uuid.UUID] = None,
-    vendor_id: Optional[uuid.UUID] = None,
-    status_filter: Optional[str] = None,
-    db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.get_current_user)
-):
-    query = db.query(models.GoodsReceiptNote)
-    if po_id:
-        query = query.filter(models.GoodsReceiptNote.po_id == po_id)
-    if vendor_id:
-        query = query.filter(models.GoodsReceiptNote.vendor_id == vendor_id)
-    if status_filter:
-        query = query.filter(models.GoodsReceiptNote.status == status_filter)
-        
-    return query.order_by(models.GoodsReceiptNote.receipt_date.desc()).all()
+router = APIRouter(
+    responses={404: {"description": "Not found"}},
+)
 
-@router.get("/{id}", response_model=schemas.GoodsReceiptNoteResponse)
-def get_goods_receipt_note(
-    id: uuid.UUID,
+@router.get("/", response_model=List[schemas.GoodsReceiptNoteResponse])
+def get_grns(
+    skip: int = 0, 
+    limit: int = 100, 
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(dependencies.get_current_user)
 ):
-    grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == id).first()
+    return db.query(models.GoodsReceiptNote).offset(skip).limit(limit).all()
+
+@router.get("/{grn_id}", response_model=schemas.GoodsReceiptNoteResponse)
+def get_grn(
+    grn_id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == grn_id).first()
     if not grn:
-        raise HTTPException(status_code=404, detail="Goods Receipt Note not located.")
+        raise HTTPException(status_code=404, detail="GRN not found")
     return grn
 
-@router.post("/convert-po", response_model=schemas.GoodsReceiptNoteResponse, status_code=status.HTTP_201_CREATED)
-def convert_po_to_grn_draft_api(
-    payload: schemas.GoodsReceiptNoteCreate,
+@router.post("/", response_model=schemas.GoodsReceiptNoteResponse)
+def create_grn(
+    grn_in: schemas.GoodsReceiptNoteCreate,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.WAREHOUSE]))
+    current_user: models.User = Depends(dependencies.get_current_user)
 ):
-    """
-    Receiving Gate: Converts PO into a draft GRN unloading challan list.
-    """
-    try:
-        grn = grn_services.convert_po_to_grn_draft(
-            db=db,
-            po_id=payload.po_id,
-            warehouse_id=payload.warehouse_id,
-            challan_no=payload.delivery_challan_number,
-            vehicle_details=payload.vehicle_details,
-            received_items=payload.received_items,
-            user_id=current_user.id,
-            remarks=payload.remarks
+    po = db.query(models.PurchaseOrder).filter(models.PurchaseOrder.id == grn_in.po_id).first()
+    if not po:
+        raise HTTPException(status_code=404, detail="PO not found")
+        
+    grn_number = numbering_engine.generate_document_number(db, "GRN", models.GoodsReceiptNote, "grn_number")
+    
+    grn = models.GoodsReceiptNote(
+        grn_number=grn_number,
+        po_id=grn_in.po_id,
+        vendor_id=po.vendor_id,
+        warehouse_id=grn_in.warehouse_id,
+        delivery_challan_number=grn_in.delivery_challan_number,
+        vehicle_number=grn_in.vehicle_details,
+        status="DRAFT",
+        received_by_id=current_user.id
+    )
+    db.add(grn)
+    db.flush()
+    
+    for pol in po.line_items:
+        if pol.remaining_quantity <= 0:
+            continue
+            
+        grn_line = models.GRNLineItem(
+            grn_id=grn.id,
+            po_line_item_id=pol.id,
+            item_id=pol.item_id,
+            quantity_ordered=pol.quantity_ordered,
+            previously_received_qty=pol.quantity_received,
+            unit_price=pol.unit_price,
+            gst_percent=pol.item.gst_rate if pol.item and pol.item.gst_rate else 0.0
         )
-        return grn
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"PO received draft error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal error generating receiving challan draft.")
+        db.add(grn_line)
+        
+    db.commit()
+    db.refresh(grn)
+    return grn
 
-@router.post("/{id}/qc-submit", response_model=schemas.GoodsReceiptNoteResponse)
-def submit_grn_qc_inspection_api(
-    id: uuid.UUID,
-    payload: schemas.GRNQCInspect,
+@router.post("/{grn_id}/submit")
+def submit_grn_for_approval(
+    grn_id: uuid.UUID,
     db: Session = Depends(database.get_db),
-    current_user: models.User = Depends(dependencies.require_role([models.Role.ADMIN, models.Role.WAREHOUSE]))
+    current_user: models.User = Depends(dependencies.get_current_user)
 ):
-    """
-    QC Gate: Reconciles counts, adjusts stock ledgers, and registers serial lot batches.
-    """
+    """Submits GRN for workflow approval. Auto-approves if no steps."""
+    grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == grn_id).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+        
+    if grn.status != "DRAFT":
+        raise HTTPException(status_code=400, detail="Only DRAFT GRNs can be submitted")
+        
+    grn.status = "PENDING_APPROVAL"
+    db.commit()
+    
+    workflow_engine.initialize_workflow("GOODS_RECEIPT_NOTE", grn.id, db, context={"total": float(grn.subtotal)})
+    
+    return {"message": "GRN submitted for approval"}
+
+@router.post("/{grn_id}/accept")
+def accept_and_process_grn(
+    grn_id: uuid.UUID,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Processes the accepted quantities, triggers stock ledger updates, and updates PO."""
+    grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == grn_id).first()
+    if not grn:
+        raise HTTPException(status_code=404, detail="GRN not found")
+        
+    if grn.status not in ["APPROVED", "QC_PENDING", "PARTIAL"]:
+        raise HTTPException(status_code=400, detail="GRN must be APPROVED before acceptance")
+        
     try:
-        grn = grn_services.submit_qc_inspection(
-            db=db,
-            grn_id=id,
-            qc_items=payload.qc_items,
-            inspector_id=current_user.id,
-            remarks=payload.remarks
-        )
-        return grn
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        inventory_services.process_grn_acceptance(db, grn, current_user.id)
     except Exception as e:
-        logger.error(f"QC inspect error: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal error during Quality Control submission.")
+        logger.error(f"Error processing GRN acceptance: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+        
+    return {"message": "GRN successfully accepted and inventory updated."}
+
+@router.put("/{grn_id}/lines/{line_id}", response_model=schemas.GRNLineItemResponse)
+def update_grn_line(
+    grn_id: uuid.UUID,
+    line_id: uuid.UUID,
+    accepted_qty: int,
+    rejected_qty: int = 0,
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    """Updates the received/accepted/rejected quantities for a specific GRN line before acceptance."""
+    line = db.query(models.GRNLineItem).filter(models.GRNLineItem.id == line_id, models.GRNLineItem.grn_id == grn_id).first()
+    if not line:
+        raise HTTPException(status_code=404, detail="GRN Line not found")
+        
+    line.accepted_qty = accepted_qty
+    line.rejected_qty = rejected_qty
+    line.quantity_received = accepted_qty + rejected_qty
+    db.commit()
+    db.refresh(line)
+    return line

@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Save, FileText, CheckCircle, Clock, Calendar, Sparkles, Building, Layers, ClipboardCheck, MessageSquare
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getItems, getWarehouses, adjustStock } from '../api';
+import { getItems, getWarehouses, adjustStock } from "../api";
 
 const StockAdjustment: React.FC = () => {
   const navigate = useNavigate();

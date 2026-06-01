@@ -1,13 +1,12 @@
 import React from 'react';
 import {
-  ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
   getPaginationRowModel,
-  SortingState,
   getSortedRowModel,
 } from '@tanstack/react-table';
+import type { ColumnDef, SortingState } from '@tanstack/react-table';
 import { Loader2 } from 'lucide-react';
 import { DataTablePagination } from './DataTablePagination';
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getPO, getVendors, updatePO, getItems, getAttachments, uploadAttachment, downloadAttachmentUrl } from '../api';
+import { getPO, getVendors, updatePO, getItems, getAttachments, uploadAttachment, downloadAttachmentUrl } from "../api";
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../AuthContext';
+import { useAuth } from "../AuthContext";
 import AddItemModal from '../components/AddItemModal';
 
 export default function PurchaseOrderEdit() {

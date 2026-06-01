@@ -3,7 +3,7 @@ import { UploadCloud, FileType, CheckCircle2, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ProcessingMonitor from '../components/ocr/ProcessingMonitor';
 import axios from 'axios';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore } from "../store/authStore";
 
 const SmartInvoiceIngestion: React.FC = () => {
   const [dragActive, setDragActive] = useState(false);

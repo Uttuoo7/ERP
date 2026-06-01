@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Button, Form, Input, Select, notification, Space, Typography, Popconfirm } from 'antd';
 import { ApiOutlined, DeleteOutlined, PlusOutlined, SaveOutlined } from '@ant-design/icons';
-import { get, post, del } from '../services/api';
+import { get, post, del } from "../api";
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;

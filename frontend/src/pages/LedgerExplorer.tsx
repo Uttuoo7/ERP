@@ -3,7 +3,7 @@ import {
   History, Search, FileSpreadsheet, Layers, Filter, Landmark, Info, Tag, Calendar, ChevronRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getFinancialLedger } from '../api';
+import { getFinancialLedger } from "../api";
 
 const LedgerExplorer: React.FC = () => {
   const [loading, setLoading] = useState(false);

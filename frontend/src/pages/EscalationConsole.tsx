@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Table, Typography, Tag, notification, Tabs, Button, Space } from 'antd';
 import { AlertOutlined, ClockCircleOutlined, FireOutlined } from '@ant-design/icons';
-import { get } from '../services/api';
+import { get } from "../api";
 import dayjs from 'dayjs';
 
 const { Title, Text } = Typography;

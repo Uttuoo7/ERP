@@ -4,7 +4,7 @@ import {
   FileText, ShieldCheck, AlertTriangle, Play, Landmark, Plus, Search, Filter, Loader2, Sparkles, Receipt, ArrowRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getInvoices, runInvoiceMatch } from '../api';
+import { getInvoices, runInvoiceMatch } from "../api";
 
 const InvoiceDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);

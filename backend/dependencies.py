@@ -156,3 +156,25 @@ def require_permission(permission: str):
             )
         return current_user
     return permission_checker
+
+def require_vendor(current_user: models.User = Depends(get_current_user)):
+    """
+    Validates that the authenticated user is a Vendor and extracts their vendor_id.
+    """
+    if current_user.role != models.Role.VENDOR:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied. This endpoint is strictly for Vendor use."
+        )
+    if not current_user.vendor_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access Denied. User is not linked to a Vendor profile."
+        )
+    return current_user
+
+def get_tenant_id(current_user: models.User = Depends(get_current_user)) -> str:
+    """
+    Dependency to resolve the active tenant ID from the authenticated user.
+    """
+    return str(current_user.tenant_id) if current_user.tenant_id else None

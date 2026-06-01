@@ -4,7 +4,7 @@ import {
   TrendingUp, TrendingDown, AlertTriangle, ShieldCheck, 
   Activity, ArrowRight, Zap, Target
 } from 'lucide-react';
-import { useAuthStore } from '../store/authStore';
+import { useAuthStore } from "../store/authStore";
 import toast from 'react-hot-toast';
 
 interface VendorScorecard {

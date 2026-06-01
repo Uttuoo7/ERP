@@ -4,7 +4,7 @@ import {
   Bell, CheckCircle2, AlertTriangle, Info, XCircle, Loader2, MailOpen
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getNotifications, getUnreadNotificationsCount, markAllNotificationsRead, markNotificationRead } from '../api';
+import { getNotifications, getUnreadNotificationsCount, markAllNotificationsRead, markNotificationRead } from "../api";
 
 const NotificationDropdown: React.FC = () => {
   const [open, setOpen] = useState(false);

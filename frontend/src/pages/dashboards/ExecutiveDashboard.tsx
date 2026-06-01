@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Landmark, TrendingUp, Clock, Package, AlertTriangle, ShieldAlert, Shield, Database, Sparkles, Timer } from 'lucide-react';
 import axios from 'axios';
-import { getAnalyticsCommandCenter, triggerAnalyticsSnapshot } from '../../../api';
+import { getAnalyticsCommandCenter, triggerAnalyticsSnapshot } from "../../api";
 import { KPICard, KPICardSkeleton } from '../../components/ui/KPICard';
 import toast from 'react-hot-toast';
 

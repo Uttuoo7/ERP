@@ -70,7 +70,7 @@ class VendorFactory:
             name=f"Test Vendor {n} Pvt Ltd",
             contact_email=f"vendor{n}@test.local",
             default_lead_time_days=7,
-            gstin=f"27TEST{n:04d}V1Z5",
+            gstin=f"27ABCDE{n:04d}F1Z5",
             is_msme=False,
         )
         defaults.update(kwargs)
@@ -123,8 +123,9 @@ class WarehouseFactory:
         n = cls._counter
         defaults = dict(
             id=uuid.uuid4(),
+            warehouse_code=f"WH-{n:03d}",
             name=f"Test Warehouse {n}",
-            contact_name=f"Contact Person {n}",
+            contact_person=f"Contact Person {n}",
             company_name="Test Logistics Pvt Ltd",
             address_line1=f"Plot {n}, Test Industrial Area",
             address_line2="Test District",
@@ -159,7 +160,7 @@ class POFactory:
             order_date=datetime.utcnow(),
             expected_delivery_date=datetime.utcnow() + timedelta(days=30),
             warehouse_id=warehouse.id,
-            ship_to_contact_name=warehouse.contact_name,
+            ship_to_contact_name=warehouse.contact_person,
             ship_to_company_name=warehouse.company_name,
             ship_to_address_line1=warehouse.address_line1,
             ship_to_address_line2=warehouse.address_line2,

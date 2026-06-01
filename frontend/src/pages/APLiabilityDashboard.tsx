@@ -3,7 +3,7 @@ import {
   DollarSign, TrendingUp, AlertTriangle, ShieldCheck, Plus, Search, Calendar, Landmark, Receipt, ArrowRight, Loader2, BarChart3, Filter
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getLiabilities, getPayablesAging, recordVendorPayment, getMasterList } from '../api';
+import { getLiabilities, getPayablesAging, recordVendorPayment, getMasterList } from "../api";
 
 const APLiabilityDashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);

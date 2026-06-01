@@ -1,5 +1,6 @@
 import uuid
 import logging
+from datetime import datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -110,3 +111,68 @@ def approve_and_post_ap_invoice_voucher_api(
     except Exception as e:
         logger.error(f"AP Invoice voucher posting error: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal operational ledger posting failure.")
+
+
+@router.get('/vendor-ledger/{vendor_id}', response_model=List[schemas.VendorLedgerResponse])
+def get_vendor_ledger(
+    vendor_id: uuid.UUID,
+    skip: int = 0, 
+    limit: int = 100, 
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    '''Returns the immutable vendor ledger entries for statement generation.'''
+    return db.query(models.VendorLedger).filter(models.VendorLedger.vendor_id == vendor_id)\
+             .order_by(models.VendorLedger.created_at.desc()).offset(skip).limit(limit).all()
+
+@router.get('/aging-report')
+def get_aging_report(
+    db: Session = Depends(database.get_db),
+    current_user: models.User = Depends(dependencies.get_current_user)
+):
+    '''
+    Returns payable amounts bucketed by aging:
+    0-30 days, 31-60 days, 61-90 days, 90+ days.
+    '''
+    now = datetime.utcnow()
+    vouchers = db.query(models.AccountsPayable).filter(
+        models.AccountsPayable.payment_status.in_(['PENDING', 'PARTIALLY_PAID', 'OVERDUE'])
+    ).all()
+    
+    buckets = {
+        '0-30': 0.0,
+        '31-60': 0.0,
+        '61-90': 0.0,
+        '90+': 0.0
+    }
+    
+    vendor_exposure = {}
+    
+    for v in vouchers:
+        balance = float(v.balance_amount)
+        if balance <= 0: continue
+            
+        due_date = v.due_date if v.due_date else v.created_at + timedelta(days=30)
+        days_overdue = (now - due_date).days
+        
+        if days_overdue <= 30:
+            buckets['0-30'] += balance
+        elif days_overdue <= 60:
+            buckets['31-60'] += balance
+        elif days_overdue <= 90:
+            buckets['61-90'] += balance
+        else:
+            buckets['90+'] += balance
+            
+        # Aggregate by vendor
+        v_id = str(v.vendor_id)
+        if v_id not in vendor_exposure:
+            vendor_exposure[v_id] = {'name': v.vendor.name if v.vendor else 'Unknown', 'total_due': 0.0}
+        vendor_exposure[v_id]['total_due'] += balance
+
+    return {
+        'buckets': buckets,
+        'total_liability': sum(buckets.values()),
+        'top_vendors': sorted(vendor_exposure.values(), key=lambda x: x['total_due'], reverse=True)[:5]
+    }
+

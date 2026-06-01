@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { getInvoices, postInvoiceVoucher } from '../api';
+import { getInvoices, postInvoiceVoucher } from "../api";
 import { Link } from 'react-router-dom';
 import { ShieldCheck, Loader2, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';

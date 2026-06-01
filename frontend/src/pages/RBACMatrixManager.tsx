@@ -3,7 +3,7 @@ import {
   Shield, Key, Users, AlertTriangle, CheckCircle, Loader2, Sparkles, Database, ShieldAlert, ArrowRight, UserCheck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getRBACMatrix, getRBACUsers, assignUserRole, getSecurityAuditLogs } from '../api';
+import { getRBACMatrix, getRBACUsers, assignUserRole, getSecurityAuditLogs } from "../api";
 
 const RBACMatrixManager: React.FC = () => {
   const [loading, setLoading] = useState(false);

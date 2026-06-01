@@ -7,9 +7,9 @@ from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
-load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
+from .config.settings import settings
 
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://erp_user:erp_password@localhost:5432/p2p_erp")
+SQLALCHEMY_DATABASE_URL = settings.db.url
 
 def sqlite_to_char(val, fmt):
     if not val:
@@ -42,9 +42,9 @@ else:
     try:
         engine = create_engine(
             SQLALCHEMY_DATABASE_URL, 
-            pool_size=20, 
-            max_overflow=0,
-            pool_pre_ping=True
+            pool_size=settings.db.pool_size, 
+            max_overflow=settings.db.max_overflow,
+            pool_pre_ping=settings.db.pool_pre_ping
         )
         # Test connection
         conn = engine.connect()

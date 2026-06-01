@@ -4,7 +4,7 @@ import {
   ArrowLeft, Loader2, Calendar, ShieldCheck, ShieldAlert, Truck, User, Info, Building, Layers, Eye
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getGRN } from '../api';
+import { getGRN } from "../api";
 import DocumentTraceabilityTimeline from '../components/DocumentTraceabilityTimeline';
 
 interface GRNDetailHeader {

@@ -12,7 +12,7 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(database.get_db)
     if db_item:
         raise HTTPException(status_code=400, detail="SKU already registered")
         
-    item_data = item.model_dump(exclude={"reorder_point"})
+    item_data = item.model_dump()
     db_item = models.Item(**item_data)
     db.add(db_item)
     db.flush()
@@ -22,7 +22,7 @@ def create_item(item: schemas.ItemCreate, db: Session = Depends(database.get_db)
         item_id=db_item.id,
         quantity_on_hand=0,
         quantity_reserved=0,
-        reorder_point=item.reorder_point
+        reorder_point=item.reorder_level
     )
     db.add(ledger)
     
@@ -54,7 +54,7 @@ def update_item(item_id: uuid.UUID, item: schemas.ItemUpdate, db: Session = Depe
             if existing_item:
                 raise HTTPException(status_code=400, detail="SKU already registered")
             
-        item_data = item.model_dump(exclude={"reorder_point"})
+        item_data = item.model_dump()
         for key, value in item_data.items():
             setattr(db_item, key, value)
         

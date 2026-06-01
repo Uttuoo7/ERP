@@ -48,7 +48,7 @@ def create_ap_invoice_voucher(db: Session, invoice_id: uuid.UUID, user_id: uuid.
         # Find accepted GRN quantities
         grn_accepted = 0
         for grn_line in po_line.grn_line_items:
-            grn_accepted += grn_line.quantity_accepted
+            grn_accepted += getattr(grn_line, "accepted_qty", getattr(grn_line, "quantity_accepted", 0))
 
         billed = inv_line.quantity_billed
 
@@ -94,7 +94,7 @@ def create_ap_invoice_voucher(db: Session, invoice_id: uuid.UUID, user_id: uuid.
 
     # 4. Balanced Journal Bookkeeping Postings (Double-Entry)
     gst_val = Decimal(str(invoice.gst_amount or 0))
-    tds_val = Decimal(str(invoice.tds_deducted or 0))
+    tds_val = Decimal(str(getattr(invoice, "tds_deducted", 0) or 0))
     net_liability = Decimal(str(invoice.total_amount or 0))
     taxable_base = net_liability - gst_val + tds_val
 

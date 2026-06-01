@@ -6,7 +6,7 @@ import {
 import toast from 'react-hot-toast';
 import { 
   getRFQ, getVendors, inviteRFQVendors, submitRFQQuotation 
-} from '../api';
+} from "../api";
 import DocumentTraceabilityTimeline from '../components/DocumentTraceabilityTimeline';
 
 interface RFQLine {
