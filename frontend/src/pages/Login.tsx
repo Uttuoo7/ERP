@@ -14,7 +14,7 @@ export default function Login() {
     e.preventDefault();
     try {
       const payload = {
-        email: email,
+        email: email.trim(),
         password: password
       };
       
