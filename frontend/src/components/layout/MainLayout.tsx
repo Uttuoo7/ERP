@@ -4,6 +4,7 @@ import { TopNav } from './TopNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useWebSocketStore } from '../../store/websocketStore';
 import { useHeaderStore } from '../../store/headerStore';
+import { useAuthStore } from '../../store/authStore';
 import { PageHeader } from './PageHeader';
 import { useLocation, matchPath } from 'react-router-dom';
 import { ERP_ROUTES, getRouteMetadata } from '../../routes/routes.config';
