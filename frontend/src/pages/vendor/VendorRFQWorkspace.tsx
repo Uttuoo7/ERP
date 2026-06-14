@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, Modal, Form, Input, InputNumber, DatePicker } from 'antd';
 import { Search, Eye, Send } from 'lucide-react';
-import moment from 'moment';
 
 export function VendorRFQWorkspace() {
   const [rfqs, setRfqs] = useState<any[]>([]);
@@ -49,8 +48,8 @@ export function VendorRFQWorkspace() {
   const handleSubmitQuote = async (values: any) => {
     try {
       const payload = {
-        quotation_number: `QT-${moment().format('YYYYMMDDHHmmss')}`,
-        validity_date: moment().add(30, 'days').toISOString(),
+        quotation_number: `QT-${new Date().toISOString().replace(/[-:.T]/g, '').slice(0, 14)}`,
+        validity_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
         ...values
       };
       
@@ -72,7 +71,7 @@ export function VendorRFQWorkspace() {
 
   const columns = [
     { title: 'Invitation ID', dataIndex: 'id', render: (text: string) => <span className="text-xs font-mono text-gray-500">{text.split('-')[0]}</span> },
-    { title: 'Date Invited', dataIndex: 'invited_date', render: (d: string) => moment(d).format('DD MMM YYYY') },
+    { title: 'Date Invited', dataIndex: 'invited_date', render: (d: string) => new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) },
     { title: 'Status', dataIndex: 'invitation_status', render: (status: string) => (
       <Tag color={status === 'RESPONDED' ? 'green' : status === 'VIEWED' ? 'blue' : 'orange'}>{status}</Tag>
     )},
@@ -116,7 +115,7 @@ export function VendorRFQWorkspace() {
             <div className="grid grid-cols-2 gap-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
               <div>
                 <p className="text-xs text-slate-500 font-medium">Due Date</p>
-                <p className="font-semibold">{moment(selectedRfq.due_date).format('DD MMM YYYY')}</p>
+                <p className="font-semibold">{new Date(selectedRfq.due_date).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500 font-medium">Currency</p>

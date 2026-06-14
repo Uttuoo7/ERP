@@ -53,7 +53,7 @@ const STATUS_CONFIG: Record<DocStatus, { style: string; icon: React.ElementType 
 
 const VendorDocuments: React.FC = () => {
   const { user } = useAuthStore();
-  const vendorId = user?.vendor_id ?? user?.id ?? '';
+  const vendorId = String(user?.vendor_id ?? user?.id ?? '');
 
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,7 +63,8 @@ const VendorDocuments: React.FC = () => {
     if (!vendorId) return;
     try {
       setLoading(true);
-      const data = await getAttachments('vendor', vendorId);
+      const res = await getAttachments('vendor', vendorId);
+      const data = res.data;
       setAttachments(Array.isArray(data) ? data : data.results ?? []);
     } catch {
       toast.error('Failed to load documents');

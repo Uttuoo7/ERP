@@ -14,7 +14,7 @@ interface Task {
   created_at: string;
   step: {
     name: string;
-    step_number: int;
+    step_number: number;
     condition_expression: string | null;
   };
   instance?: {

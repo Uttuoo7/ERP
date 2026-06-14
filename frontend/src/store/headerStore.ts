@@ -9,7 +9,7 @@ interface HeaderState {
   actions?: React.ReactNode;
   secondaryActions?: React.ReactNode;
   recentItems?: React.ReactNode;
-  setHeader: (data: Omit<HeaderState, 'setHeader' | 'clearHeader'>) => void;
+  setHeader: (data: Partial<Omit<HeaderState, 'setHeader' | 'clearHeader'>>) => void;
   clearHeader: () => void;
 }
 

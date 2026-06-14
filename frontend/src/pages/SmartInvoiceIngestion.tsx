@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { UploadCloud, FileType, CheckCircle2, AlertCircle } from 'lucide-react';
+import { UploadCloud, FileType, CheckCircle2, AlertCircle, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ProcessingMonitor from '../components/ocr/ProcessingMonitor';
 import axios from 'axios';

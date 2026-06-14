@@ -49,7 +49,7 @@ const StockAdjustment: React.FC = () => {
     try {
       // Split serials by line
       const serials = serialText.split('\n')
-        .map(x => x.strip ? x.strip() : x.trim())
+        .map(x => x.trim())
         .filter(x => x.length > 0);
 
       const payload = {

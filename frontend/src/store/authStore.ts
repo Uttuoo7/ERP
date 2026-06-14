@@ -5,10 +5,12 @@ interface User {
   username: string;
   email: string;
   role: string;
+  vendor_id?: string | number | null;
 }
 
 interface AuthState {
   user: User | null;
+  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (token: string, user: User) => void;
@@ -19,16 +21,17 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  token: localStorage.getItem('token'),
   isAuthenticated: !!localStorage.getItem('token'),
   isLoading: true,
   login: (token, user) => {
     localStorage.setItem('token', token);
-    set({ user, isAuthenticated: true });
+    set({ token, user, isAuthenticated: true });
   },
   logout: () => {
     localStorage.removeItem('token');
     localStorage.removeItem('refresh_token');
-    set({ user: null, isAuthenticated: false });
+    set({ token: null, user: null, isAuthenticated: false });
   },
   setUser: (user) => set({ user, isAuthenticated: true }),
   setLoading: (loading) => set({ isLoading: loading }),

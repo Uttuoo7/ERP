@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, Upload } from 'antd';
-import { UploadOutlined, FileText } from 'lucide-react';
-import moment from 'moment';
+import { FileText } from 'lucide-react';
+import { UploadOutlined } from '@ant-design/icons';
 
 export function VendorInvoiceWorkspace() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -26,7 +26,7 @@ export function VendorInvoiceWorkspace() {
 
   const columns = [
     { title: 'Invoice No.', dataIndex: 'invoice_number', render: (text: string) => <span className="font-semibold text-indigo-600">{text}</span> },
-    { title: 'Date Submitted', dataIndex: 'created_at', render: (d: string) => moment(d).format('DD MMM YYYY') },
+    { title: 'Date Submitted', dataIndex: 'created_at', render: (d: string) => new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) },
     { title: 'Amount', dataIndex: 'total_amount', render: (amt: number) => `$${Number(amt).toLocaleString()}` },
     { title: 'Status', dataIndex: 'status', render: (status: string) => (
       <Tag color={status === 'PAID' ? 'green' : status === 'APPROVED' ? 'blue' : 'orange'}>

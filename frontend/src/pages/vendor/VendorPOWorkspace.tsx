@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, notification } from 'antd';
 import { CheckCircle, FileText, Download } from 'lucide-react';
-import moment from 'moment';
 
 export function VendorPOWorkspace() {
   const [pos, setPos] = useState<any[]>([]);
@@ -40,8 +39,8 @@ export function VendorPOWorkspace() {
 
   const columns = [
     { title: 'PO Number', dataIndex: 'po_number', render: (text: string) => <span className="font-semibold text-indigo-600">{text || 'Pending Generation'}</span> },
-    { title: 'Order Date', dataIndex: 'created_at', render: (d: string) => moment(d).format('DD MMM YYYY') },
-    { title: 'Expected Delivery', dataIndex: 'expected_delivery_date', render: (d: string) => d ? moment(d).format('DD MMM YYYY') : 'Not Set' },
+    { title: 'Order Date', dataIndex: 'created_at', render: (d: string) => new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) },
+    { title: 'Expected Delivery', dataIndex: 'expected_delivery_date', render: (d: string) => d ? new Date(d).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' }) : 'Not Set' },
     { title: 'Amount', dataIndex: 'total_amount', render: (amt: number) => `$${Number(amt).toLocaleString()}` },
     { title: 'Status', dataIndex: 'status', render: (status: string) => (
       <Tag color={status === 'DRAFT' ? 'orange' : status === 'ISSUED' ? 'blue' : 'green'}>

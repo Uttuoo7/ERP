@@ -70,7 +70,8 @@ const VendorPaymentTracker: React.FC = () => {
   const fetchPayments = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getLiabilities({ vendor_id: user?.vendor_id });
+      const res = await getLiabilities({ vendor_id: user?.vendor_id });
+      const data = res.data;
       setLiabilities(Array.isArray(data) ? data : data.results ?? []);
     } catch {
       toast.error('Failed to load payment data');

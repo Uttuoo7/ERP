@@ -71,7 +71,8 @@ const VendorInvoiceCenter: React.FC = () => {
   const fetchInvoices = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await getInvoices();
+      const res = await getInvoices();
+      const data = res.data;
       setInvoices(Array.isArray(data) ? data : data.results ?? []);
     } catch (err) {
       toast.error('Failed to load invoices');
@@ -88,7 +89,9 @@ const VendorInvoiceCenter: React.FC = () => {
     setShowForm(true);
     setDropdownsLoading(true);
     try {
-      const [poData, grnData] = await Promise.all([getPOs(), getGRNs()]);
+      const [poRes, grnRes] = await Promise.all([getPOs(), getGRNs()]);
+      const poData = poRes.data;
+      const grnData = grnRes.data;
       setPos(Array.isArray(poData) ? poData : poData.results ?? []);
       setGrns(Array.isArray(grnData) ? grnData : grnData.results ?? []);
     } catch {
@@ -141,7 +144,7 @@ const VendorInvoiceCenter: React.FC = () => {
         formData.append('file', file);
         formData.append('source_type', 'invoice');
         const uploadRes = await uploadAttachment(formData);
-        attachment_id = uploadRes.id;
+        attachment_id = uploadRes.data.id;
       }
 
       const payload = {

@@ -50,7 +50,7 @@ const StockLedgerList: React.FC = () => {
       // Client-side search match to support fast query filter
       let filtered = res.data;
       if (search.trim()) {
-        const term = search.toLowerCase().strip ? search.toLowerCase().trim() : search.toLowerCase();
+        const term = search.toLowerCase().trim();
         filtered = res.data.filter((x: any) => 
           x.item?.sku.toLowerCase().includes(term) || 
           x.item?.name.toLowerCase().includes(term) ||
