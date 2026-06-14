@@ -34,3 +34,19 @@ from tests.fixtures.auth import (         # noqa: F401
     finance_manager_headers,
     auditor_headers,
 )
+
+# Apply runtime monkeypatch to fix python 3.14/SQLAlchemy evaluation environment bug
+from sqlalchemy.dialects.sqlite.base import SQLiteExecutionContext
+from sqlalchemy.engine.default import DefaultExecutionContext
+
+for ctx_class in (SQLiteExecutionContext, DefaultExecutionContext):
+    if hasattr(ctx_class, "get_result_proxy"):
+        original_get_result_proxy = getattr(ctx_class, "get_result_proxy")
+        def make_safe_getter(orig_method):
+            def safe_get_result_proxy(self):
+                if not hasattr(self, "adhoc_result"):
+                    self.adhoc_result = getattr(self, "result", None)
+                return orig_method(self)
+            return safe_get_result_proxy
+        setattr(ctx_class, "get_result_proxy", make_safe_getter(original_get_result_proxy))
+

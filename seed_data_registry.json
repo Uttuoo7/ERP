@@ -1,0 +1,111 @@
+{
+  "factory_seed": {
+    "journal_entries": [],
+    "grns": [
+      "6404af86-5bde-4f67-9bac-143bc91bcc1f"
+    ],
+    "invoices": [],
+    "payments": [],
+    "vendor_liabilities": []
+  },
+  "test": {
+    "journal_entries": [
+      "1b4d2e77-dd98-46c4-b2e4-1360fb2ab3a2",
+      "cb2e11ff-3dd8-4479-8180-6ffd26207580",
+      "240008e2-73c6-40bb-b0d5-afbab5245332",
+      "028c5120-6211-4bce-ab94-57bc745da71a",
+      "3e240a8d-5940-4368-beed-fcc8ecdba6c5",
+      "1b2e0793-2015-495e-9a52-4e05b2af6327",
+      "3620329f-805e-4c4c-8bfa-c33f8d83382a",
+      "3c6ffd35-fb50-48a0-88cd-618f58292899",
+      "8ad51f1b-2315-45b3-aed9-4b1205f06a0c"
+    ],
+    "grns": [
+      "84df6cdd-d7f3-4aec-aa5b-7df254358e1e",
+      "4ffe1fec-43a5-4b12-9e4a-f9a5edd3bee7",
+      "23e3c90c-ed6e-4b4e-9e77-590f89b09b95",
+      "056b2397-9dbf-490f-9f24-4981b112523d",
+      "a40994df-a7b4-4a63-bf5f-3c14f3cecc1f"
+    ],
+    "invoices": [
+      "9f038f40-0348-4d16-b34b-5b57f78d762f",
+      "459343f2-a38e-47e0-b542-710b4a6be94d",
+      "83b2e78e-ff87-488c-9e5d-fa807d4bd34f"
+    ],
+    "payments": [
+      "17502a4e-a7d5-4f6e-a897-29a9c2ca9e74"
+    ],
+    "vendor_liabilities": [
+      "4d99d218-46b5-40ed-a603-c47c6e3ef9f2"
+    ]
+  },
+  "audit": {
+    "journal_entries": [
+      "b8ff20b3-57a7-466f-9e96-c87a44ed67fc",
+      "c036692c-55d1-4ba9-8dd4-a4f7830203fd",
+      "31c79665-c52b-4b35-afa7-181d3b90919e",
+      "afd106ca-80b7-4038-add0-17fbbbb54531",
+      "84811776-23e4-470b-97b0-f174a8d2fe15",
+      "ec6cb588-87f8-4aed-b746-941f5b9cd8b6",
+      "b36ec91c-336b-4eb3-88f0-a40d6c5c7cca",
+      "7ae5bc49-69bb-415e-94c6-7de699b5b717",
+      "d1cde984-b335-41d2-9f21-b8b39c979372",
+      "5d61cb4f-b034-4985-b22e-68e85f580149",
+      "3dede197-f7dd-4aa6-914b-76ffcc472c2a",
+      "d8197564-e533-4ced-b636-61e1bd366754",
+      "7c9ee0e3-23a4-4e1f-a02b-b9b38db9bbd3",
+      "057bae62-b627-4a1c-b36a-741a290d2f7b",
+      "ce0cd06f-e1ed-442b-a649-f5bf8eeb8e89"
+    ],
+    "grns": [
+      "7b1ed86b-3bf9-4b90-ab94-43bd719cac62",
+      "3c30ae3d-04ca-424e-8ae2-cc4c70cf63e2",
+      "fb90d15d-66aa-491a-8093-628991a988fe",
+      "4e87cc57-df9b-4f40-81f9-bdd539a2db04",
+      "96f6831e-0fd2-40bd-9d89-c7d5d4d93409"
+    ],
+    "invoices": [
+      "593f50f3-89f7-46b9-a0e9-f76997dbb58c",
+      "871ac7b3-c2b5-453b-b04a-d0eabfe8f0a4",
+      "4613e2a1-4192-43b8-aa19-d13020eaaa6d",
+      "1a03d630-844e-4595-a552-7ba81db52229",
+      "7967bbb6-6548-4bde-9143-e7fde9f711b7"
+    ],
+    "payments": [
+      "b922a3be-8b36-425f-8780-a87247c1337a",
+      "0d045892-81ad-4d43-ab30-5a58a42d9747",
+      "525737c0-011e-448b-86da-5d64a2264469",
+      "1c0dd5e4-a5f8-4aea-b9e9-0d588a99f185",
+      "592a1154-858c-4614-8788-445c14a5241d"
+    ],
+    "vendor_liabilities": [
+      "743296aa-74ce-46c5-95a2-5015b19fa471",
+      "4eb52764-1555-4a36-a129-d9eefc5778f2",
+      "740f5d02-7d60-489c-85d5-fa3e50865ff8",
+      "e570689a-d838-435d-94ec-951a0394572a",
+      "c84eabcb-254c-4bb1-8b3c-722b9fde8547"
+    ]
+  },
+  "production": {
+    "journal_entries": [
+      "f0e5b7be-fb81-4c75-b87d-d23555b8c830",
+      "3a7c06fc-2434-4bde-9584-ea502c006e9b",
+      "7025662e-e982-4524-8c69-732dbc55eed7",
+      "305e1240-da9f-4ca8-8a8a-7ee0861eed94",
+      "78757851-2c4c-4f15-a408-08b825151b83",
+      "10606f89-548f-4e13-b6ab-0983fe7885db",
+      "fb784b95-dd1f-463a-9ba7-c0f56e1f1a28",
+      "43e13e2e-f660-418f-aef5-e8d5023ad78c",
+      "672e736f-9afe-4d08-852f-356a7be0e727",
+      "132798e3-d3c1-4736-b9af-79321bc11ddb",
+      "48962826-d515-44db-ade9-1936f54cea90",
+      "dae34ed2-dc9f-4e42-9a82-c82964f3e84b",
+      "70156f23-879c-4903-8db1-c0042cb6fcb3",
+      "78639a80-3c8a-49cf-a20c-ee1eaead71bf"
+    ],
+    "grns": [],
+    "invoices": [],
+    "payments": [],
+    "vendor_liabilities": []
+  }
+}

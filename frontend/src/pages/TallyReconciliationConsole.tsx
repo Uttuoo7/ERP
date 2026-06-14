@@ -26,8 +26,8 @@ const TallyReconciliationConsole: React.FC = () => {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const data = await get('/tally-reconciliation');
-      setReports(data);
+      const res = await get('/tally-reconciliation');
+      setReports(res.data);
     } catch (error) {
       notification.error({ message: 'Failed to fetch reconciliation reports' });
     } finally {

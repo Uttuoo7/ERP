@@ -8,6 +8,406 @@ from . import models, event_dispatcher
 
 logger = logging.getLogger(__name__)
 
+from .database import get_current_tenant_id
+
+def get_inventory_costing_method(db: Session, tenant_id: Optional[uuid.UUID] = None) -> str:
+    """Helper to query the current costing method from TenantConfig."""
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+    query = db.query(models.TenantConfig)
+    if tenant_id:
+        query = query.filter(models.TenantConfig.tenant_uuid == tenant_id)
+    config = query.first()
+    if config and hasattr(config, "inventory_costing_method"):
+        return config.inventory_costing_method or "FIFO"
+    return "FIFO"
+
+def get_allow_negative_inventory(db: Session, tenant_id: Optional[uuid.UUID] = None) -> bool:
+    """Helper to query the negative inventory setting from TenantConfig."""
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+    query = db.query(models.TenantConfig)
+    if tenant_id:
+        query = query.filter(models.TenantConfig.tenant_uuid == tenant_id)
+    config = query.first()
+    if config and hasattr(config, "allow_negative_inventory"):
+        return config.allow_negative_inventory or False
+    return False
+
+def create_audit_log(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: Optional[uuid.UUID],
+    action_type: str,
+    before_qty: Decimal,
+    after_qty: Decimal,
+    before_val: Decimal,
+    after_val: Decimal,
+    reference_type: str,
+    reference_id: Optional[uuid.UUID],
+    performed_by: Optional[uuid.UUID],
+    tenant_id: Optional[uuid.UUID] = None
+):
+    """Writes a record to the inventory audit log."""
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+    log_entry = models.InventoryAuditLog(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        action_type=action_type,
+        before_quantity=before_qty,
+        after_quantity=after_qty,
+        before_value=before_val,
+        after_value=after_val,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        performed_by=performed_by,
+        created_at=datetime.utcnow(),
+        tenant_id=tenant_id
+    )
+    db.add(log_entry)
+    db.flush()
+
+def log_inventory_movement(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: Optional[uuid.UUID],
+    transaction_type: str,
+    qty: int,
+    unit_cost: Decimal,
+    batch_id: Optional[uuid.UUID] = None,
+    reference_type: Optional[str] = None,
+    reference_id: Optional[uuid.UUID] = None,
+    user_id: Optional[uuid.UUID] = None,
+    remarks: Optional[str] = None,
+    tenant_id: Optional[uuid.UUID] = None
+) -> models.InventoryTransactionLine:
+    """
+    Unified central helper to write canonical InventoryTransaction and InventoryTransactionLine movement logs.
+    """
+    logger.info(f"Inventory Movement Ledger: Logging {qty} units of SKU {item_id} at WH {warehouse_id} (Type: {transaction_type})")
+
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+
+    tx = None
+    if reference_id:
+        tx = db.query(models.InventoryTransaction).filter(
+            models.InventoryTransaction.reference_id == reference_id
+        ).first()
+
+    if not tx:
+        tx_number = f"TX-{datetime.utcnow().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        tx = models.InventoryTransaction(
+            transaction_number=tx_number,
+            transaction_type=transaction_type,
+            reference_type=reference_type,
+            reference_id=reference_id,
+            remarks=remarks,
+            created_by_id=user_id,
+            tenant_id=tenant_id,
+            # Legacy compatibility columns
+            item_id=item_id,
+            warehouse_id=warehouse_id,
+            batch_id=batch_id,
+            quantity=qty,
+            valuation_unit_cost=unit_cost
+        )
+        db.add(tx)
+        db.flush()
+
+    line = models.InventoryTransactionLine(
+        transaction_id=tx.id,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        batch_id=batch_id,
+        quantity=qty,
+        valuation_unit_cost=unit_cost,
+        remarks=remarks,
+        tenant_id=tenant_id
+    )
+    db.add(line)
+    db.flush()
+    return line
+
+def get_current_totals(db: Session, item_id: uuid.UUID, tenant_id: Optional[uuid.UUID] = None) -> tuple:
+    """Calculates total quantity and total value from all remaining cost layers for an item."""
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+    query = db.query(models.InventoryCostLayer).filter(
+        models.InventoryCostLayer.item_id == item_id,
+        models.InventoryCostLayer.remaining_quantity != 0,
+        models.InventoryCostLayer.is_deleted == False
+    )
+    if tenant_id:
+        query = query.filter(models.InventoryCostLayer.tenant_id == tenant_id)
+    layers = query.all()
+    qty = sum(l.remaining_quantity for l in layers)
+    val = sum(l.remaining_quantity * l.unit_cost for l in layers)
+    return Decimal(str(qty)), Decimal(str(val))
+
+def create_cost_layer(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: Optional[uuid.UUID],
+    qty: Decimal,
+    unit_cost: Decimal,
+    reference_type: str,
+    reference_id: Optional[uuid.UUID],
+    user_id: Optional[uuid.UUID],
+    tenant_id: Optional[uuid.UUID] = None
+) -> models.InventoryCostLayer:
+    """
+    Creates an inventory cost layer for received stock, generates a valuation entry,
+    and logs the action in the audit log.
+    """
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+
+    # 1. Fetch current totals before receipt
+    before_qty, before_val = get_current_totals(db, item_id, tenant_id)
+
+    # 2. Resolve source PO if referenced to a GRN
+    source_grn_id = None
+    source_po_id = None
+    if reference_type == "GOODS_RECEIPT_NOTE" and reference_id:
+        grn = db.query(models.GoodsReceiptNote).filter(models.GoodsReceiptNote.id == reference_id).first()
+        if grn:
+            source_grn_id = reference_id
+            source_po_id = grn.po_id
+
+    # 3. Create Cost Layer
+    costing_method = get_inventory_costing_method(db, tenant_id)
+    resolved_unit_cost = unit_cost
+    
+    if costing_method == "STANDARD":
+        item = db.query(models.Item).filter_by(id=item_id).first()
+        if item and item.standard_rate is not None:
+            resolved_unit_cost = Decimal(str(item.standard_rate))
+
+    cost_layer = models.InventoryCostLayer(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        original_quantity=qty,
+        remaining_quantity=qty,
+        unit_cost=resolved_unit_cost,
+        total_cost=qty * resolved_unit_cost,
+        source_grn_id=source_grn_id,
+        source_po_id=source_po_id,
+        layer_status="OPEN",
+        created_at=datetime.utcnow(),
+        tenant_id=tenant_id
+    )
+    db.add(cost_layer)
+    db.flush()
+
+    # 4. Record Valuation Entry
+    after_qty = before_qty + qty
+    after_val = before_val + (qty * resolved_unit_cost)
+    
+    if costing_method == "WAC":
+        # Recalculate WAC
+        new_wac = after_val / after_qty if after_qty > 0 else resolved_unit_cost
+        
+        # Update cost_layer and all existing open cost layers for this item to the new WAC
+        cost_layer.unit_cost = new_wac
+        cost_layer.total_cost = cost_layer.remaining_quantity * new_wac
+        
+        open_layers = db.query(models.InventoryCostLayer).filter(
+            models.InventoryCostLayer.item_id == item_id,
+            models.InventoryCostLayer.remaining_quantity != 0,
+            models.InventoryCostLayer.is_deleted == False
+        ).all()
+        for l in open_layers:
+            l.unit_cost = new_wac
+            l.total_cost = l.remaining_quantity * new_wac
+            
+        # Update WarehouseStock valuation cost
+        wh_stocks = db.query(models.WarehouseStock).filter(
+            models.WarehouseStock.item_id == item_id,
+            models.WarehouseStock.is_deleted == False
+        ).all()
+        for ws in wh_stocks:
+            ws.valuation_unit_cost = new_wac
+            
+        resolved_unit_cost = new_wac
+        after_val = after_qty * new_wac
+
+    val_entry = models.InventoryValuationEntry(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="RECEIPT",
+        running_inventory_qty=after_qty,
+        running_inventory_value=after_val,
+        quantity=qty,
+        unit_cost=unit_cost,  # Keep actual receipt cost in the transaction record
+        total_value=qty * unit_cost,
+        costing_method_used=costing_method,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        created_at=datetime.utcnow(),
+        tenant_id=tenant_id
+    )
+    db.add(val_entry)
+    db.flush()
+
+    # 5. Write Audit Log
+    create_audit_log(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        action_type="RECEIPT",
+        before_qty=before_qty,
+        after_qty=after_qty,
+        before_val=before_val,
+        after_val=after_val,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        performed_by=user_id,
+        tenant_id=tenant_id
+    )
+
+    return cost_layer
+
+def consume_cost_layers(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: Optional[uuid.UUID],
+    qty_to_issue: Decimal,
+    fallback_cost: Decimal,
+    reference_type: str,
+    reference_id: Optional[uuid.UUID],
+    user_id: Optional[uuid.UUID],
+    tenant_id: Optional[uuid.UUID] = None,
+    consumed_layers_out: Optional[list] = None
+) -> Decimal:
+    """
+    Consumes inventory cost layers chronologically (FIFO), registers valuation entries,
+    and logs the action in the audit log. Supports negative inventory protection.
+    Returns the average unit cost of the issue transaction.
+    """
+    if not tenant_id:
+        tenant_id = get_current_tenant_id()
+
+    # 1. Fetch current totals before issue
+    before_qty, before_val = get_current_totals(db, item_id, tenant_id)
+
+    # 2. Check Negative Inventory Controls
+    allow_negative = get_allow_negative_inventory(db, tenant_id)
+    if not allow_negative and qty_to_issue > before_qty:
+        raise ValueError("Insufficient inventory available.")
+
+    # 3. Get costing method
+    costing_method = get_inventory_costing_method(db, tenant_id)
+
+    # 4. Consume layers chronologically
+    remaining_to_issue = qty_to_issue
+    total_issue_value = Decimal("0.0")
+
+    # Fetch unconsumed positive layers
+    query = db.query(models.InventoryCostLayer).filter(
+        models.InventoryCostLayer.item_id == item_id,
+        models.InventoryCostLayer.remaining_quantity > 0,
+        models.InventoryCostLayer.is_deleted == False
+    )
+    if tenant_id:
+        query = query.filter(models.InventoryCostLayer.tenant_id == tenant_id)
+    
+    # We sort by created_at asc for FIFO
+    layers = query.order_by(models.InventoryCostLayer.created_at.asc()).all()
+
+    for layer in layers:
+        if remaining_to_issue <= 0:
+            break
+        
+        consume_qty = min(remaining_to_issue, layer.remaining_quantity)
+        layer.remaining_quantity -= consume_qty
+        
+        # Update layer status and consumed details
+        if layer.remaining_quantity == 0:
+            layer.layer_status = "CONSUMED"
+            layer.consumed_at = datetime.utcnow()
+        else:
+            layer.layer_status = "PARTIALLY_CONSUMED"
+        layer.last_issue_reference = f"{reference_type}:{reference_id}"
+        
+        if consumed_layers_out is not None:
+            consumed_layers_out.append({
+                "layer_id": str(layer.id),
+                "unit_cost": layer.unit_cost,
+                "quantity": consume_qty,
+                "batch_id": None
+            })
+
+        total_issue_value += consume_qty * layer.unit_cost
+        remaining_to_issue -= consume_qty
+
+    # 5. Handle remaining quantity for negative inventory
+    if remaining_to_issue > 0:
+        if allow_negative:
+            # Create a temporary negative cost layer
+            neg_layer = models.InventoryCostLayer(
+                item_id=item_id,
+                warehouse_id=warehouse_id,
+                original_quantity=-remaining_to_issue,
+                remaining_quantity=-remaining_to_issue,
+                unit_cost=fallback_cost,
+                total_cost=-remaining_to_issue * fallback_cost,
+                layer_status="OPEN",
+                created_at=datetime.utcnow(),
+                tenant_id=tenant_id
+            )
+            db.add(neg_layer)
+            total_issue_value += remaining_to_issue * fallback_cost
+            remaining_to_issue = Decimal("0.0")
+        else:
+            total_issue_value += remaining_to_issue * fallback_cost
+            remaining_to_issue = Decimal("0.0")
+
+    db.flush()
+
+    actual_issue_unit_cost = total_issue_value / qty_to_issue if qty_to_issue > 0 else Decimal("0.0")
+
+    # 6. Record Valuation Entry
+    after_qty = before_qty - qty_to_issue
+    after_val = before_val - total_issue_value
+
+    val_entry = models.InventoryValuationEntry(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="CONSUMPTION",
+        quantity=-qty_to_issue,
+        unit_cost=actual_issue_unit_cost,
+        total_value=-total_issue_value,
+        running_inventory_qty=after_qty,
+        running_inventory_value=after_val,
+        costing_method_used=costing_method,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        created_at=datetime.utcnow(),
+        tenant_id=tenant_id
+    )
+    db.add(val_entry)
+    db.flush()
+
+    # 7. Write Audit Log
+    create_audit_log(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        action_type="ISSUE",
+        before_qty=before_qty,
+        after_qty=after_qty,
+        before_val=before_val,
+        after_val=after_val,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        performed_by=user_id,
+        tenant_id=tenant_id
+    )
+
+    return actual_issue_unit_cost
+
 def record_receipt(
     db: Session,
     item_id: uuid.UUID,
@@ -105,37 +505,38 @@ def record_receipt(
     )
     db.add(ledger_entry)
 
-    # 5. Compatibility log: backend/models.py Legacy InventoryTransaction
-    legacy_tx = models.InventoryTransaction(
+    # 5. Canonical Movement Ledger: InventoryTransaction & Line
+    log_inventory_movement(
+        db=db,
         item_id=item_id,
         warehouse_id=warehouse_id,
-        batch_id=batch_id,
         transaction_type="RECEIPT",
-        quantity=qty,
-        valuation_unit_cost=unit_cost,
+        qty=qty,
+        unit_cost=unit_cost,
+        batch_id=batch_id,
+        reference_type=reference_type,
         reference_id=reference_id,
+        user_id=user_id,
         remarks=remarks,
-        created_by_id=user_id
+        tenant_id=getattr(ledger_entry, "tenant_id", None)
     )
-    db.add(legacy_tx)
 
     # 6. Recalculate Legacy global InventoryLedger summary (sum of all on-hand stocks across WHs)
-    total_on_hand = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).sum(models.WarehouseStock.quantity_on_hand)
-    total_reserved = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).sum(models.WarehouseStock.quantity_reserved)
+    q_sum = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).all()
+    total_on_hand = sum(x.quantity_on_hand for x in q_sum)
+    total_reserved = sum(x.quantity_reserved for x in q_sum)
     
     global_ledger = db.query(models.InventoryLedger).filter(models.InventoryLedger.item_id == item_id).first()
     if not global_ledger:
         global_ledger = models.InventoryLedger(
             item_id=item_id,
-            quantity_on_hand=qty,
-            quantity_reserved=0
+            quantity_on_hand=total_on_hand,
+            quantity_reserved=total_reserved
         )
         db.add(global_ledger)
     else:
-        # Resolve via SQL queries sum or simple addition
-        q_sum = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).all()
-        global_ledger.quantity_on_hand = sum(x.quantity_on_hand for x in q_sum)
-        global_ledger.quantity_reserved = sum(x.quantity_reserved for x in q_sum)
+        global_ledger.quantity_on_hand = total_on_hand
+        global_ledger.quantity_reserved = total_reserved
         global_ledger.last_updated = datetime.utcnow()
 
     db.flush()
@@ -154,6 +555,18 @@ def record_receipt(
             "user_id": user_id
         },
         db
+    )
+
+    create_cost_layer(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        qty=Decimal(str(qty)),
+        unit_cost=Decimal(str(unit_cost)),
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        tenant_id=getattr(ledger_entry, "tenant_id", None)
     )
 
     return ledger_entry
@@ -268,19 +681,48 @@ def record_issue(
             stock_bal.quantity_on_hand = legacy_stock.current_stock
             db.flush()
 
-    if (not stock_bal or stock_bal.quantity_on_hand < qty) and batch_id is None:
-        # Fallback to any batch that has sufficient quantity
-        stock_bal = db.query(models.WarehouseStock).filter(
-            models.WarehouseStock.warehouse_id == warehouse_id,
-            models.WarehouseStock.item_id == item_id,
-            models.WarehouseStock.quantity_on_hand >= qty
-        ).first()
+    tenant_id = get_current_tenant_id()
+    allow_negative = get_allow_negative_inventory(db, tenant_id)
 
-    if not stock_bal or stock_bal.quantity_on_hand < qty:
-        raise ValueError("Sufficient on-hand quantity not located for this stock balance.")
+    if (not stock_bal or stock_bal.quantity_on_hand < qty) and not allow_negative:
+        if batch_id is None:
+            # Fallback to any batch that has sufficient quantity
+            stock_bal = db.query(models.WarehouseStock).filter(
+                models.WarehouseStock.warehouse_id == warehouse_id,
+                models.WarehouseStock.item_id == item_id,
+                models.WarehouseStock.quantity_on_hand >= qty
+            ).first()
 
-    # Calculate FIFO Costing unit cost
-    fifo_unit_cost = calculate_fifo_cost(db, item_id, warehouse_id, qty, stock_bal.valuation_unit_cost)
+        if not stock_bal or stock_bal.quantity_on_hand < qty:
+            raise ValueError("Insufficient inventory available.")
+
+    if not stock_bal:
+        stock_bal = models.WarehouseStock(
+            warehouse_id=warehouse_id,
+            item_id=item_id,
+            batch_id=batch_id,
+            quantity_on_hand=0,
+            quantity_reserved=0,
+            quantity_damaged=0,
+            quantity_transit=0,
+            valuation_unit_cost=Decimal("0.0"),
+            tenant_id=tenant_id
+        )
+        db.add(stock_bal)
+        db.flush()
+
+    # Calculate Costing unit cost & consume cost layers
+    fifo_unit_cost = consume_cost_layers(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        qty_to_issue=Decimal(str(qty)),
+        fallback_cost=stock_bal.valuation_unit_cost,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        tenant_id=getattr(stock_bal, "tenant_id", tenant_id)
+    )
 
     # Deduct stock
     stock_bal.quantity_on_hand -= qty
@@ -327,19 +769,21 @@ def record_issue(
     )
     db.add(legacy_ledger)
 
-    # Legacy compatibility log
-    legacy_tx = models.InventoryTransaction(
+    # Canonical Movement Ledger: InventoryTransaction & Line
+    log_inventory_movement(
+        db=db,
         item_id=item_id,
         warehouse_id=warehouse_id,
-        batch_id=batch_id,
         transaction_type="ISSUE",
-        quantity=-qty,
-        valuation_unit_cost=fifo_unit_cost,
+        qty=-qty,
+        unit_cost=fifo_unit_cost,
+        batch_id=batch_id,
+        reference_type=reference_type,
         reference_id=reference_id,
+        user_id=user_id,
         remarks=remarks,
-        created_by_id=user_id
+        tenant_id=tenant_id
     )
-    db.add(legacy_tx)
 
     # Global summary updates
     global_ledger = db.query(models.InventoryLedger).filter(models.InventoryLedger.item_id == item_id).first()
@@ -559,3 +1003,269 @@ def deduct_stock(
         user_id=user_id,
         remarks=remarks
     )
+
+def record_material_issue(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    qty: Decimal,
+    reference_type: str,
+    reference_id: uuid.UUID,
+    user_id: Optional[uuid.UUID] = None,
+    batch_id: Optional[uuid.UUID] = None,
+    remarks: Optional[str] = None
+) -> tuple:
+    """
+    ACID helper for material consumption issues. Validates stock limits, consumes layers,
+    and updates StockLedger, Valuation, Audit, and Canonical Movement Ledger tables.
+    Returns (unit_cost, total_cost, consumed_layers_info, costing_method)
+    """
+    logger.info(f"Inventory Engine: record_material_issue for item {item_id}, warehouse {warehouse_id}, qty {qty}")
+    
+    # Check current stock balance
+    stock_bal = db.query(models.WarehouseStock).filter(
+        models.WarehouseStock.warehouse_id == warehouse_id,
+        models.WarehouseStock.item_id == item_id,
+        models.WarehouseStock.batch_id == batch_id
+    ).first()
+
+    tenant_id = get_current_tenant_id()
+    allow_negative = get_allow_negative_inventory(db, tenant_id)
+
+    # Validate stock
+    current_qty = stock_bal.quantity_on_hand if stock_bal else Decimal("0.0")
+    if not allow_negative and current_qty < qty:
+        if batch_id is None:
+            stock_bal = db.query(models.WarehouseStock).filter(
+                models.WarehouseStock.warehouse_id == warehouse_id,
+                models.WarehouseStock.item_id == item_id,
+                models.WarehouseStock.quantity_on_hand >= qty
+            ).first()
+        if not stock_bal or stock_bal.quantity_on_hand < qty:
+            raise ValueError("Insufficient inventory available.")
+
+    if not stock_bal:
+        stock_bal = models.WarehouseStock(
+            warehouse_id=warehouse_id,
+            item_id=item_id,
+            batch_id=batch_id,
+            quantity_on_hand=Decimal("0.0"),
+            quantity_reserved=Decimal("0.0"),
+            quantity_damaged=Decimal("0.0"),
+            quantity_transit=Decimal("0.0"),
+            valuation_unit_cost=Decimal("0.0"),
+            tenant_id=tenant_id
+        )
+        db.add(stock_bal)
+        db.flush()
+
+    # Track consumed layers
+    consumed_layers = []
+    
+    # Consume layers (updates cost layers, valuation entry, and audit log)
+    fifo_unit_cost = consume_cost_layers(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        qty_to_issue=qty,
+        fallback_cost=stock_bal.valuation_unit_cost,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        tenant_id=tenant_id,
+        consumed_layers_out=consumed_layers
+    )
+
+    # Deduct stock balance
+    stock_bal.quantity_on_hand -= qty
+    db.flush()
+
+    # Write stock ledger entry
+    ledger_entry = models.StockLedgerEntry(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        batch_id=batch_id,
+        transaction_type="ISSUE",
+        quantity_change=-qty,
+        resulting_on_hand=stock_bal.quantity_on_hand,
+        valuation_unit_cost=fifo_unit_cost,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        remarks=remarks or f"Material issue under {reference_type}",
+        created_by_id=user_id
+    )
+    db.add(ledger_entry)
+
+    # Legacy compatibility StockLedger record
+    legacy_ledger = models.StockLedger(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="ISSUE",
+        reference_type=reference_type,
+        reference_id=reference_id or uuid.uuid4(),
+        qty_in=0,
+        qty_out=qty,
+        balance_after=stock_bal.quantity_on_hand,
+        unit_rate=fifo_unit_cost,
+        total_value=fifo_unit_cost * qty,
+        remarks=remarks or f"Issue for {reference_type}"
+    )
+    db.add(legacy_ledger)
+
+    # Canonical Movement Ledger (InventoryTransaction & Line)
+    log_inventory_movement(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="ISSUE",
+        qty=-qty,
+        unit_cost=fifo_unit_cost,
+        batch_id=batch_id,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        remarks=remarks,
+        tenant_id=tenant_id
+    )
+
+    # Update global summary
+    global_ledger = db.query(models.InventoryLedger).filter(models.InventoryLedger.item_id == item_id).first()
+    if global_ledger:
+        q_sum = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).all()
+        global_ledger.quantity_on_hand = sum(x.quantity_on_hand for x in q_sum)
+        global_ledger.last_updated = datetime.utcnow()
+
+    db.flush()
+
+    costing_method = get_inventory_costing_method(db, tenant_id)
+    
+    # Format consumed layers reference
+    layer_ref_str = None
+    if consumed_layers:
+        layer_ref_str = ", ".join([f"Layer {l['layer_id'][:8]} (Qty: {l['quantity']:.4f}, Cost: {l['unit_cost']:.2f})" for l in consumed_layers])
+        if len(layer_ref_str) > 200:
+            layer_ref_str = layer_ref_str[:197] + "..."
+
+    return fifo_unit_cost, fifo_unit_cost * qty, layer_ref_str, costing_method
+
+
+def record_material_return(
+    db: Session,
+    item_id: uuid.UUID,
+    warehouse_id: uuid.UUID,
+    qty: Decimal,
+    unit_cost: Decimal,
+    reference_type: str,
+    reference_id: uuid.UUID,
+    user_id: Optional[uuid.UUID] = None,
+    batch_id: Optional[uuid.UUID] = None,
+    remarks: Optional[str] = None
+) -> tuple:
+    """
+    ACID helper for material returns. Restores inventory layers, reverses valuation,
+    updates stock balance, StockLedger, Audit, and Canonical Movement Ledger.
+    Returns (unit_cost, total_cost, costing_method)
+    """
+    logger.info(f"Inventory Engine: record_material_return for item {item_id}, warehouse {warehouse_id}, qty {qty}")
+    
+    tenant_id = get_current_tenant_id()
+    
+    # 1. Update Warehouse Stock Balance
+    stock_bal = db.query(models.WarehouseStock).filter(
+        models.WarehouseStock.warehouse_id == warehouse_id,
+        models.WarehouseStock.item_id == item_id,
+        models.WarehouseStock.batch_id == batch_id
+    ).first()
+
+    if not stock_bal:
+        stock_bal = models.WarehouseStock(
+            warehouse_id=warehouse_id,
+            item_id=item_id,
+            batch_id=batch_id,
+            quantity_on_hand=Decimal("0.0"),
+            quantity_reserved=Decimal("0.0"),
+            quantity_damaged=Decimal("0.0"),
+            quantity_transit=Decimal("0.0"),
+            valuation_unit_cost=unit_cost,
+            tenant_id=tenant_id
+        )
+        db.add(stock_bal)
+        db.flush()
+
+    # 2. Restore cost layers (creates layer, valuation entry, audit log)
+    cost_layer = create_cost_layer(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        qty=qty,
+        unit_cost=unit_cost,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        tenant_id=tenant_id
+    )
+
+    # 3. Update stock balance
+    stock_bal.quantity_on_hand += qty
+    stock_bal.valuation_unit_cost = cost_layer.unit_cost
+    db.flush()
+
+    # 4. Write stock ledger entry
+    ledger_entry = models.StockLedgerEntry(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        batch_id=batch_id,
+        transaction_type="RECEIPT",
+        quantity_change=qty,
+        resulting_on_hand=stock_bal.quantity_on_hand,
+        valuation_unit_cost=cost_layer.unit_cost,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        remarks=remarks or f"Material return under {reference_type}",
+        created_by_id=user_id
+    )
+    db.add(ledger_entry)
+
+    # Legacy compatibility StockLedger record
+    legacy_ledger = models.StockLedger(
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="RECEIPT",
+        reference_type=reference_type,
+        reference_id=reference_id or uuid.uuid4(),
+        qty_in=qty,
+        qty_out=0,
+        balance_after=stock_bal.quantity_on_hand,
+        unit_rate=cost_layer.unit_cost,
+        total_value=cost_layer.unit_cost * qty,
+        remarks=remarks or f"Return for {reference_type}"
+    )
+    db.add(legacy_ledger)
+
+    # Canonical Movement Ledger (InventoryTransaction & Line)
+    log_inventory_movement(
+        db=db,
+        item_id=item_id,
+        warehouse_id=warehouse_id,
+        transaction_type="RECEIPT",
+        qty=qty,
+        unit_cost=cost_layer.unit_cost,
+        batch_id=batch_id,
+        reference_type=reference_type,
+        reference_id=reference_id,
+        user_id=user_id,
+        remarks=remarks,
+        tenant_id=tenant_id
+    )
+
+    # Update global summary
+    global_ledger = db.query(models.InventoryLedger).filter(models.InventoryLedger.item_id == item_id).first()
+    if global_ledger:
+        q_sum = db.query(models.WarehouseStock).filter(models.WarehouseStock.item_id == item_id).all()
+        global_ledger.quantity_on_hand = sum(x.quantity_on_hand for x in q_sum)
+        global_ledger.last_updated = datetime.utcnow()
+
+    db.flush()
+
+    costing_method = get_inventory_costing_method(db, tenant_id)
+    return cost_layer.unit_cost, cost_layer.unit_cost * qty, costing_method

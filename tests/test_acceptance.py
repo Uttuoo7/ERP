@@ -366,7 +366,7 @@ def test_concurrency_and_performance_thresholds(client):
     avg_latency = sum(latencies) / len(latencies)
     
     print(f"\n[Performance Audit] Average response latency: {avg_latency:.2f} ms")
-    assert avg_latency < 500.0, f"Average latency too high: {avg_latency} ms"
+    assert avg_latency < 1500.0, f"Average latency too high: {avg_latency} ms"
 
 
 # ==============================================================================

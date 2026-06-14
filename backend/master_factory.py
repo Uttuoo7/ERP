@@ -55,7 +55,7 @@ def create_master_router(
             "total": total,
             "page": page,
             "limit": limit,
-            "items": items
+            "items": [response_schema.model_validate(item) for item in items]
         }
 
     @router.get("/export")
@@ -81,6 +81,21 @@ def create_master_router(
         output.seek(0)
         response = StreamingResponse(iter([output.getvalue()]), media_type="text/csv")
         response.headers["Content-Disposition"] = f"attachment; filename={path_name}_export_{datetime.utcnow().strftime('%Y%m%d')}.csv"
+        return response
+
+    @router.get("/template")
+    def download_template():
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Get header from columns, excluding system fields
+        exclude_cols = ["id", "is_deleted", "created_at", "updated_at", "created_by_id", "updated_by_id", "tenant_id"]
+        columns = [c.name for c in model.__table__.columns if c.name not in exclude_cols]
+        writer.writerow(columns)
+
+        output.seek(0)
+        response = StreamingResponse(iter([output.getvalue()]), media_type="text/csv")
+        response.headers["Content-Disposition"] = f"attachment; filename={path_name}_template.csv"
         return response
 
     @router.post("/bulk-import", status_code=status.HTTP_201_CREATED)

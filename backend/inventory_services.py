@@ -95,6 +95,20 @@ def process_grn_acceptance(db: Session, grn: models.GoodsReceiptNote, user_id: u
         # Update physical stock
         stock.current_stock += line.accepted_qty
         stock.available_stock += line.accepted_qty
+
+        # Create cost layer for inventory valuation
+        from . import inventory_engine
+        inventory_engine.create_cost_layer(
+            db=db,
+            item_id=line.item_id,
+            warehouse_id=grn.warehouse_id,
+            qty=Decimal(str(line.accepted_qty)),
+            unit_cost=Decimal(str(line.unit_price)),
+            reference_type="GOODS_RECEIPT_NOTE",
+            reference_id=grn.id,
+            user_id=user_id,
+            tenant_id=getattr(grn, "tenant_id", None)
+        )
         
         # Update PO Line Item fulfillment
         po_line = db.query(models.POLineItem).filter(models.POLineItem.id == line.po_line_item_id).first()

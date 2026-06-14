@@ -64,6 +64,66 @@ def test_engine():
 
     # Create tables
     Base.metadata.create_all(bind=engine)
+
+    # Seed default tenant to prevent foreign key errors for tables enforcing tenant FKs
+    from backend.models import Tenant, Account, TenantConfig, SYSTEM_DEFAULT_TENANT_UUID
+    from sqlalchemy.orm import Session
+    with Session(engine) as session:
+        default_tenant = Tenant(
+            id=SYSTEM_DEFAULT_TENANT_UUID,
+            name="Default Tenant",
+            domain="default.local",
+            status="ACTIVE"
+        )
+        session.add(default_tenant)
+        session.flush()
+
+        # Seed default GL accounts
+        acc_control = Account(
+            id=uuid.uuid4(),
+            code="1200",
+            name="Inventory Control Account",
+            account_type="ASSET",
+            tenant_id=SYSTEM_DEFAULT_TENANT_UUID
+        )
+        acc_gain = Account(
+            id=uuid.uuid4(),
+            code="4100",
+            name="Inventory Gain Account",
+            account_type="REVENUE",
+            tenant_id=SYSTEM_DEFAULT_TENANT_UUID
+        )
+        acc_loss = Account(
+            id=uuid.uuid4(),
+            code="5100",
+            name="Inventory Loss Account",
+            account_type="EXPENSE",
+            tenant_id=SYSTEM_DEFAULT_TENANT_UUID
+        )
+        acc_variance = Account(
+            id=uuid.uuid4(),
+            code="5000",
+            name="Inventory Variance Account",
+            account_type="EXPENSE",
+            tenant_id=SYSTEM_DEFAULT_TENANT_UUID
+        )
+        session.add_all([acc_control, acc_gain, acc_loss, acc_variance])
+        session.flush()
+
+        # Seed default config
+        config = TenantConfig(
+            tenant_uuid=SYSTEM_DEFAULT_TENANT_UUID,
+            inventory_control_account_id=acc_control.id,
+            inventory_adjustment_gain_account_id=acc_gain.id,
+            inventory_adjustment_loss_account_id=acc_loss.id,
+            inventory_variance_account_id=acc_variance.id,
+            inventory_costing_method="FIFO",
+            allow_negative_inventory=False,
+            tenant_id=SYSTEM_DEFAULT_TENANT_UUID
+        )
+        session.add(config)
+        session.commit()
+
     yield engine
     # Drop tables after session
     Base.metadata.drop_all(bind=engine)
@@ -80,10 +140,40 @@ def test_session_factory(test_engine):
 def db_session(test_engine, test_session_factory) -> Session:
     """Provide a DB session rolled back after each test using SAVEPOINT."""
     connection = test_engine.connect()
-    outer = connection.begin()
+    connection.exec_driver_sql("BEGIN")
     session = test_session_factory(bind=connection)
     session.begin_nested()
+
+    # Monkeypatch commit and rollback to prevent leaking nested transactions into the outer transaction
+    real_commit = session.commit
+    real_rollback = session.rollback
+
+    def patched_commit():
+        if session.in_nested_transaction():
+            real_commit()
+            session.begin_nested()
+        else:
+            session.flush()
+
+    def patched_rollback():
+        if session.in_nested_transaction():
+            real_rollback()
+            session.begin_nested()
+        else:
+            real_rollback()
+
+    session.commit = patched_commit
+    session.rollback = patched_rollback
+
     yield session
+
+    session.commit = real_commit
+    session.rollback = real_rollback
     session.close()
-    outer.rollback()
+    try:
+        connection.exec_driver_sql("ROLLBACK")
+    except Exception:
+        pass
     connection.close()
+
+

@@ -13,8 +13,8 @@ const QueueMonitoringConsole: React.FC = () => {
   useEffect(() => {
     const fetchQueue = async () => {
       try {
-        const data = await get('/observability/metrics/queue');
-        setLogs(data);
+        const res = await get('/observability/metrics/queue');
+        setLogs(res.data);
       } catch (error) {
         notification.error({ message: 'Failed to fetch queue metrics' });
       } finally {

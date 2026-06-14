@@ -15,12 +15,12 @@ const EscalationConsole: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [timersData, escalationsData] = await Promise.all([
+      const [timersRes, escalationsRes] = await Promise.all([
         get('/sla/timers?status=ACTIVE'),
         get('/sla/escalations')
       ]);
-      setActiveTimers(timersData);
-      setEscalations(escalationsData);
+      setActiveTimers(timersRes.data);
+      setEscalations(escalationsRes.data);
     } catch (error) {
       notification.error({ message: 'Failed to fetch SLA data' });
     } finally {

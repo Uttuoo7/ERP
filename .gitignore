@@ -26,6 +26,9 @@ ENV/
 # Database
 *.db
 *.sqlite3
+*.db-journal
+*.db-shm
+*.db-wal
 
 # Node / Frontend
 node_modules/
@@ -42,3 +45,17 @@ dist-ssr/
 
 # MacOS
 .DS_Store
+
+# Coverage / Test artifacts
+.coverage
+coverage_html/
+htmlcov/
+.pytest_cache/
+
+# Temp / Scratch files
+temp_mrp_bench*
+backups/
+*.bak
+
+# Uploads (user-generated, not source)
+uploads/

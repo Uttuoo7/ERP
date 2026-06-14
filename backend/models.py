@@ -4,10 +4,9 @@ from decimal import Decimal
 from typing import List, Optional
 import enum
 
-from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, Enum, Text, Float
+from sqlalchemy import String, Integer, Numeric, Boolean, DateTime, ForeignKey, Enum, Text, Float, UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.dialects.postgresql import UUID
 
 SYSTEM_DEFAULT_TENANT_UUID = uuid.UUID("00000000-0000-0000-0000-000000000000")
 
@@ -86,8 +85,20 @@ class TenantConfig(Base):
     logo_url: Mapped[Optional[str]] = mapped_column(String(500))
     theme_color: Mapped[str] = mapped_column(String(20), default="#4f46e5")
     modules_enabled_json: Mapped[str] = mapped_column(String, default='["PROCUREMENT","INVENTORY"]')
+    inventory_costing_method: Mapped[str] = mapped_column(String(20), default="FIFO")
+    allow_negative_inventory: Mapped[bool] = mapped_column(Boolean, default=False)
+    
+    # Configurable accounting settings
+    inventory_control_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    inventory_adjustment_gain_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    inventory_adjustment_loss_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    inventory_variance_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("accounts.id"), nullable=True)
     
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="config")
+    inventory_control_account: Mapped[Optional["Account"]] = relationship("Account", foreign_keys=[inventory_control_account_id])
+    inventory_adjustment_gain_account: Mapped[Optional["Account"]] = relationship("Account", foreign_keys=[inventory_adjustment_gain_account_id])
+    inventory_adjustment_loss_account: Mapped[Optional["Account"]] = relationship("Account", foreign_keys=[inventory_adjustment_loss_account_id])
+    inventory_variance_account: Mapped[Optional["Account"]] = relationship("Account", foreign_keys=[inventory_variance_account_id])
 
 class Company(Base):
     __tablename__ = "companies"
@@ -174,6 +185,10 @@ class Employee(BaseMaster):
     phone: Mapped[Optional[str]] = mapped_column(String(20))
     department_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     cost_center_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+
+    @property
+    def employee_code(self) -> str:
+        return self.employee_id
 
 class Customer(BaseMaster):
     __tablename__ = "customers"
@@ -308,21 +323,27 @@ class InventoryLedger(Base):
 class InventoryTransaction(Base):
     __tablename__ = "inventory_transactions"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"))
-    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
-    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("inventory_batches.id"), nullable=True)
-    transaction_type: Mapped[str] = mapped_column(String(50)) # RECEIPT, ISSUE, TRANSFER, ADJUSTMENT, RETURN, DAMAGE, RESERVATION
-    quantity: Mapped[int] = mapped_column(Integer)
-    valuation_unit_cost: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
-    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
-    remarks: Mapped[Optional[str]] = mapped_column(String(255))
+    transaction_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    transaction_type: Mapped[str] = mapped_column(String(50)) # RECEIPT, ISSUE, TRANSFER, ADJUSTMENT, REVALUATION, COUNT, etc.
+    reference_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
-    
-    item: Mapped["Item"] = relationship()
-    warehouse: Mapped[Optional["Warehouse"]] = relationship()
-    batch: Mapped[Optional["InventoryBatch"]] = relationship()
-    created_by: Mapped[Optional["User"]] = relationship()
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    # Legacy fields kept for backward compatibility with existing codebase
+    item_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("items.id"), nullable=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("inventory_batches.id"), nullable=True)
+    quantity: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    valuation_unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), default=0.0, nullable=True)
+
+    item: Mapped[Optional["Item"]] = relationship(foreign_keys=[item_id])
+    warehouse: Mapped[Optional["Warehouse"]] = relationship(foreign_keys=[warehouse_id])
+    batch: Mapped[Optional["InventoryBatch"]] = relationship(foreign_keys=[batch_id])
+    created_by: Mapped[Optional["User"]] = relationship(foreign_keys=[created_by_id])
+    lines: Mapped[List["InventoryTransactionLine"]] = relationship("InventoryTransactionLine", back_populates="transaction", cascade="all, delete-orphan")
 
 class InventoryBatch(Base):
     __tablename__ = "inventory_batches"
@@ -623,6 +644,7 @@ class Invoice(Base):
     total_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2))
     gst_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     discount_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
+    tds_deducted: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     
     cgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
     sgst: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0)
@@ -1915,48 +1937,161 @@ class WorkOrder(Base):
     __tablename__ = 'work_orders'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     work_order_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    production_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('production_orders.id'))
-    operation_name: Mapped[str] = mapped_column(String(100))
+    
+    # Phase 14 Extensions
+    wo_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, index=True, nullable=True)
+    production_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('production_orders.id'), nullable=True)
+    item_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('items.id'), nullable=True)
+    quantity: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 4), nullable=True)
+    operation_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     workstation_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('workstations.id'), nullable=True)
     assigned_to: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
     planned_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
     actual_hours: Mapped[float] = mapped_column(Numeric(10, 2), default=0.0)
-    status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, IN_PROGRESS, COMPLETED, HOLD
-    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    
+    planned_start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    planned_end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    actual_start_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    actual_end_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    mrp_plan_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('mrp_plans.id'), nullable=True)
+    
+    priority: Mapped[Optional[str]] = mapped_column(String(20), default='MEDIUM') # CRITICAL, HIGH, MEDIUM, LOW
+    customer_priority: Mapped[Optional[str]] = mapped_column(String(20), default='MEDIUM') # HIGH, MEDIUM, LOW
+    release_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    
+    status: Mapped[str] = mapped_column(String(50), default='PLANNED') # DRAFT, PLANNED, RELEASED, MATERIAL_ALLOCATED, IN_PROGRESS, COMPLETED, QC_PENDING, CLOSED, CANCELLED
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     production_order = relationship('ProductionOrder', back_populates='work_orders')
     workstation = relationship('Workstation')
+    item = relationship('Item')
+
+class MRPPlan(Base):
+    __tablename__ = 'mrp_plans'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('warehouses.id'), nullable=True)
+    planning_horizon_days: Mapped[int] = mapped_column(Integer, default=30)
+    status: Mapped[str] = mapped_column(String(20), default='DRAFT') # DRAFT, COMPLETED, CANCELLED
+    items_analyzed: Mapped[int] = mapped_column(Integer, default=0)
+    recommendations_generated: Mapped[int] = mapped_column(Integer, default=0)
+    total_recommended_value: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=0.0)
+    run_duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generated_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('users.id'))
+
+    warehouse = relationship('Warehouse')
+    generated_by = relationship('User')
+    recommendations = relationship('MRPRecommendation', back_populates='source_plan', cascade='all, delete-orphan')
+    snapshots = relationship('MRPSnapshot', back_populates='source_plan', cascade='all, delete-orphan')
+
+class MRPSnapshot(Base):
+    __tablename__ = 'mrp_snapshots'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source_plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('mrp_plans.id'), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('warehouses.id'), index=True)
+    on_hand_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    in_transit_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    open_po_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    reserved_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    forecast_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    net_available_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    source_plan = relationship('MRPPlan', back_populates='snapshots')
+    item = relationship('Item')
+    warehouse = relationship('Warehouse')
+
+class DemandForecast(Base):
+    __tablename__ = 'demand_forecasts'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('warehouses.id'), index=True)
+    forecast_date: Mapped[datetime] = mapped_column(DateTime, index=True)
+    forecast_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4))
+    forecast_method: Mapped[str] = mapped_column(String(50)) # MOVING_AVERAGE, WEIGHTED_MOVING_AVERAGE, MANUAL
+    forecast_version: Mapped[str] = mapped_column(String(20), default='V1')
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    item = relationship('Item')
+    warehouse = relationship('Warehouse')
+
+class SafetyStockPolicy(Base):
+    __tablename__ = 'safety_stock_policies'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('warehouses.id'), index=True)
+    safety_stock_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    reorder_point_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    reorder_qty: Mapped[Decimal] = mapped_column(Numeric(15, 4), default=0.0)
+    lead_time_days: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    item = relationship('Item')
+    warehouse = relationship('Warehouse')
 
 class MRPRecommendation(Base):
     __tablename__ = 'mrp_recommendations'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'))
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('warehouses.id'), nullable=True)
     required_qty: Mapped[float] = mapped_column(Numeric(12, 2))
     available_qty: Mapped[float] = mapped_column(Numeric(12, 2))
     shortage_qty: Mapped[float] = mapped_column(Numeric(12, 2))
-    recommended_procurement_qty: Mapped[float] = mapped_column(Numeric(12, 2))
-    recommendation_type: Mapped[str] = mapped_column(String(50)) # PURCHASE, TRANSFER, PRODUCTION
-    status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, ACCEPTED, REJECTED
+    recommended_procurement_qty: Mapped[float] = mapped_column(Numeric(12, 2)) # Keep for compat
+    recommended_order_qty: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 4), nullable=True)
+    recommendation_type: Mapped[str] = mapped_column(String(50)) # PURCHASE, TRANSFER, EXPEDITE, PRODUCTION
+    required_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    priority: Mapped[Optional[str]] = mapped_column(String(20), default='MEDIUM', nullable=True)
+    source_plan_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('mrp_plans.id'), nullable=True)
+    estimated_unit_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
+    estimated_total_cost: Mapped[Optional[Decimal]] = mapped_column(Numeric(15, 2), nullable=True)
+    purchase_requisition_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('purchase_requisitions.id'), nullable=True)
+    purchase_requisition_line_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('purchase_requisition_lines.id'), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, APPROVED, REJECTED, CONVERTED, EXPIRED, CANCELLED
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
+    # Explainability & Traceability extensions
+    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    narrative: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    source_po_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('purchase_orders.id'), nullable=True)
+    
     item = relationship('Item')
+    warehouse = relationship('Warehouse')
+    source_plan = relationship('MRPPlan', back_populates='recommendations')
+    purchase_requisition = relationship('PurchaseRequisition')
+    source_po = relationship('PurchaseOrder')
 
 class QualityInspection(Base):
     __tablename__ = 'quality_inspections'
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     inspection_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    production_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('production_orders.id'))
+    production_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('production_orders.id'), nullable=True)
+    
+    # Phase 14 Extensions
+    work_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('work_orders.id'), nullable=True)
+    item_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('items.id'), nullable=True)
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('manufacturing_batches.id'), nullable=True)
+    
     inspected_qty: Mapped[float] = mapped_column(Numeric(12, 2))
     accepted_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
     rejected_qty: Mapped[float] = mapped_column(Numeric(12, 2), default=0.0)
-    rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
+    rejection_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     inspector_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
     inspection_status: Mapped[str] = mapped_column(String(50), default='PENDING') # PENDING, PASSED, FAILED, REWORK
-    remarks: Mapped[Optional[str]] = mapped_column(Text)
+    disposition: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # FG_RECEIPT, REWORK_INVENTORY, SCRAP_VARIANCE
+    remarks: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    inspection_date: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     production_order = relationship('ProductionOrder')
+    work_order = relationship('WorkOrder')
+    item = relationship('Item')
+    batch = relationship('ManufacturingBatch')
+    results = relationship('QualityInspectionResult', back_populates='inspection', cascade='all, delete-orphan')
 
 
 
@@ -2188,4 +2323,669 @@ class SystemHealthMetric(Base):
     celery_queue_depth: Mapped[int] = mapped_column(Integer, default=0)
     websocket_pool_count: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# =========================================================================
+# GENERAL LEDGER & CHART OF ACCOUNTS MODELS
+# =========================================================================
+
+class FiscalYear(Base):
+    __tablename__ = "fiscal_years"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    start_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN") # OPEN, CLOSING, CLOSED
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    periods: Mapped[List["AccountingPeriod"]] = relationship("AccountingPeriod", back_populates="fiscal_year", cascade="all, delete-orphan")
+
+class JournalSequence(Base):
+    __tablename__ = "journal_sequences"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    fiscal_year_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fiscal_years.id"), unique=True, index=True)
+    current_number: Mapped[int] = mapped_column(Integer, default=0)
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+class AccountingPeriod(Base):
+    __tablename__ = "accounting_periods"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    period_name: Mapped[str] = mapped_column(String(50), unique=True, index=True) # e.g. "2026-06"
+    start_date: Mapped[datetime] = mapped_column(DateTime)
+    end_date: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN") # OPEN, CLOSED, LOCKED
+    fiscal_year_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("fiscal_years.id"), nullable=True)
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    fiscal_year: Mapped[Optional["FiscalYear"]] = relationship("FiscalYear", back_populates="periods")
+
+class Account(Base):
+    __tablename__ = "accounts"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100), index=True)
+    account_type: Mapped[str] = mapped_column(String(50)) # ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    parent_account_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("accounts.id"), nullable=True)
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    parent_account: Mapped[Optional["Account"]] = relationship("Account", remote_side=[id], backref="child_accounts")
+
+class PostingConfiguration(Base):
+    __tablename__ = "posting_configurations"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_key: Mapped[str] = mapped_column(String(100), unique=True, index=True) # e.g. "INVENTORY_RECEIPT"
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"))
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    account: Mapped["Account"] = relationship("Account")
+
+class JournalEntry(Base):
+    __tablename__ = "journal_entries"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    entry_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    entry_date: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    reference_type: Mapped[str] = mapped_column(String(50)) # GRN, INVOICE, PAYMENT, MANUAL
+    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_module: Mapped[str] = mapped_column(String(50)) # PROCUREMENT, FINANCE, MANUAL
+    source_event: Mapped[str] = mapped_column(String(100)) # e.g. "goods_received"
+    narration: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="POSTED") # DRAFT, POSTED, REVERSED
+    reversal_of_journal_entry_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("journal_entries.id"), nullable=True)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    journal_lines: Mapped[List["JournalLine"]] = relationship("JournalLine", back_populates="journal_entry", cascade="all, delete-orphan")
+
+class JournalLine(Base):
+    __tablename__ = "journal_lines"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    journal_entry_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("journal_entries.id"))
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("accounts.id"))
+    debit_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.0"))
+    credit_amount: Mapped[Decimal] = mapped_column(Numeric(15, 2), default=Decimal("0.0"))
+    narration: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    
+    journal_entry: Mapped["JournalEntry"] = relationship("JournalEntry", back_populates="journal_lines")
+    account: Mapped["Account"] = relationship("Account")
+
+
+# =========================================================================
+# INVENTORY VALUATION & COST ACCOUNTING MODULE
+# =========================================================================
+
+class InventoryCostLayer(Base):
+    __tablename__ = "inventory_cost_layers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    original_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    remaining_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    source_grn_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("goods_receipt_notes.id"), nullable=True)
+    source_po_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("purchase_orders.id"), nullable=True)
+    layer_status: Mapped[str] = mapped_column(String(20), default="OPEN")  # OPEN, PARTIALLY_CONSUMED, CONSUMED
+    consumed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    last_issue_reference: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    item: Mapped["Item"] = relationship("Item")
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+    source_grn: Mapped[Optional["GoodsReceiptNote"]] = relationship("GoodsReceiptNote")
+    source_po: Mapped[Optional["PurchaseOrder"]] = relationship("PurchaseOrder")
+
+
+class InventoryValuationEntry(Base):
+    __tablename__ = "inventory_valuation_entries"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    transaction_type: Mapped[str] = mapped_column(String(50))  # RECEIPT, CONSUMPTION, TRANSFER, ADJUSTMENT
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    total_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    running_inventory_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    running_inventory_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    costing_method_used: Mapped[str] = mapped_column(String(20))  # FIFO, WAC, STANDARD
+    reference_type: Mapped[str] = mapped_column(String(50))  # GRN, MATERIAL_ISSUE, STOCK_TRANSFER, ADJUSTMENT
+    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    item: Mapped["Item"] = relationship("Item")
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+
+
+class InventoryRevaluation(Base):
+    __tablename__ = "inventory_revaluations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    old_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    new_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    quantity_affected: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    value_difference: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    reason: Mapped[str] = mapped_column(String(500))
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT")  # DRAFT, SUBMITTED, APPROVED, REJECTED
+    approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    item: Mapped["Item"] = relationship("Item")
+    approver: Mapped[Optional["User"]] = relationship("User")
+
+
+class InventoryPeriod(Base):
+    __tablename__ = "inventory_periods"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    month: Mapped[int] = mapped_column(Integer)
+    year: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="OPEN")  # OPEN, CLOSING, CLOSED
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+
+class InventoryAuditLog(Base):
+    __tablename__ = "inventory_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    action_type: Mapped[str] = mapped_column(String(50))  # RECEIPT, ISSUE, TRANSFER, ADJUSTMENT, REVALUATION
+    before_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    after_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    before_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    after_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    reference_type: Mapped[str] = mapped_column(String(50))
+    reference_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    performed_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    item: Mapped["Item"] = relationship("Item")
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+    user: Mapped[Optional["User"]] = relationship("User")
+
+
+class InventorySnapshot(Base):
+    __tablename__ = "inventory_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    snapshot_date: Mapped[datetime] = mapped_column(DateTime)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    inventory_value: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    inventory_quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    item_count: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+
+
+class InventoryAdjustment(Base):
+    __tablename__ = "inventory_adjustments"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True)
+    qty_change: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT")  # DRAFT, SUBMITTED, APPROVED, REJECTED
+    reason_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    approved_by: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    item: Mapped["Item"] = relationship("Item")
+    warehouse: Mapped[Optional["Warehouse"]] = relationship("Warehouse")
+    approver: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by])
+    creator: Mapped[Optional["User"]] = relationship("User", foreign_keys=[created_by_id])
+
+
+class InventoryTransactionLine(Base):
+    __tablename__ = "inventory_transaction_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transaction_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inventory_transactions.id"), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    warehouse_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("warehouses.id"), nullable=True, index=True)
+    batch_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("inventory_batches.id"), nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer)
+    valuation_unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0.0)
+    remarks: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    transaction: Mapped["InventoryTransaction"] = relationship("InventoryTransaction", back_populates="lines")
+    item: Mapped["Item"] = relationship()
+    warehouse: Mapped[Optional["Warehouse"]] = relationship()
+    batch: Mapped[Optional["InventoryBatch"]] = relationship()
+
+
+class InventoryTransfer(Base):
+    __tablename__ = "inventory_transfers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transfer_number: Mapped[str] = mapped_column(String(50), unique=True)
+    source_warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"), index=True)
+    destination_warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT") # DRAFT, PENDING_APPROVAL, APPROVED, IN_TRANSIT, COMPLETED, CANCELLED
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    source_warehouse: Mapped["Warehouse"] = relationship("Warehouse", foreign_keys=[source_warehouse_id])
+    destination_warehouse: Mapped["Warehouse"] = relationship("Warehouse", foreign_keys=[destination_warehouse_id])
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
+    approved_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by_id])
+    lines: Mapped[List["InventoryTransferLine"]] = relationship("InventoryTransferLine", back_populates="transfer", cascade="all, delete-orphan")
+
+
+class InventoryTransferLine(Base):
+    __tablename__ = "inventory_transfer_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    transfer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inventory_transfers.id"), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    qty_requested: Mapped[int] = mapped_column(Integer)
+    qty_transferred: Mapped[int] = mapped_column(Integer, default=0)
+    qty_received: Mapped[int] = mapped_column(Integer, default=0)
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0.0)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    transfer: Mapped["InventoryTransfer"] = relationship("InventoryTransfer", back_populates="lines")
+    item: Mapped["Item"] = relationship()
+
+
+class CycleCount(Base):
+    __tablename__ = "cycle_counts"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    count_number: Mapped[str] = mapped_column(String(50), unique=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT") # DRAFT, PENDING_APPROVAL, COMPLETED, CANCELLED
+    count_date: Mapped[datetime] = mapped_column(DateTime)
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    counted_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    verified_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    warehouse: Mapped["Warehouse"] = relationship()
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
+    counted_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[counted_by_id])
+    verified_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[verified_by_id])
+    approved_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by_id])
+    lines: Mapped[List["CycleCountLine"]] = relationship("CycleCountLine", back_populates="cycle_count", cascade="all, delete-orphan")
+
+
+class CycleCountLine(Base):
+    __tablename__ = "cycle_count_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    cycle_count_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("cycle_counts.id"), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    system_qty: Mapped[int] = mapped_column(Integer)
+    physical_qty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    variance_qty: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0.0)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+
+    cycle_count: Mapped["CycleCount"] = relationship("CycleCount", back_populates="lines")
+    item: Mapped["Item"] = relationship()
+
+
+class InventoryIssue(Base):
+    __tablename__ = "inventory_issues"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    issue_number: Mapped[str] = mapped_column(String(50), unique=True)
+    warehouse_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("warehouses.id"), index=True)
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"), nullable=True, index=True)
+    issue_date: Mapped[datetime] = mapped_column(DateTime)
+    status: Mapped[str] = mapped_column(String(20), default="DRAFT") # DRAFT, SUBMITTED, APPROVED, POSTED
+    issue_type: Mapped[str] = mapped_column(String(50), default="ISSUE") # ISSUE, RETURN, INTERNAL, SCRAP
+    remarks: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    approved_by_id: Mapped[Optional[uuid.UUID]] = mapped_column("approved_by", ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("tenants.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    warehouse: Mapped["Warehouse"] = relationship("Warehouse")
+    department: Mapped[Optional["Department"]] = relationship("Department")
+    approved_by: Mapped[Optional["User"]] = relationship("User", foreign_keys=[approved_by_id])
+    lines: Mapped[List["InventoryIssueLine"]] = relationship("InventoryIssueLine", back_populates="issue", cascade="all, delete-orphan")
+
+
+class InventoryIssueLine(Base):
+    __tablename__ = "inventory_issue_lines"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    issue_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("inventory_issues.id"), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("items.id"), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    unit_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0.0)
+    total_cost: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=0.0)
+    costing_method_used: Mapped[str] = mapped_column(String(20))
+    issue_cost_basis: Mapped[str] = mapped_column(String(20)) # FIFO, WAC, STANDARD
+    cost_layer_reference: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+    issue: Mapped["InventoryIssue"] = relationship("InventoryIssue", back_populates="lines")
+    item: Mapped["Item"] = relationship("Item")
+
+
+# =========================================================================
+# PHASE 14 ENTERPRISE MANUFACTURING MODELS
+# =========================================================================
+
+class BillOfMaterial(Base):
+    __tablename__ = 'bill_of_materials'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bom_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    revision: Mapped[str] = mapped_column(String(20), default='V1.0')
+    status: Mapped[str] = mapped_column(String(20), default='ACTIVE') # DRAFT, ACTIVE, OBSOLETE
+    effective_from: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    effective_to: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    item = relationship('Item')
+    line_items = relationship('BillOfMaterialLine', back_populates='bom', cascade='all, delete-orphan')
+
+
+class BillOfMaterialLine(Base):
+    __tablename__ = 'bill_of_material_lines'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    bom_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('bill_of_materials.id'), index=True)
+    component_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    scrap_factor: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    uom: Mapped[str] = mapped_column(String(20))
+
+    bom = relationship('BillOfMaterial', back_populates='line_items')
+    component_item = relationship('Item')
+
+
+class WorkCenter(Base):
+    __tablename__ = 'work_centers'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    capacity_per_day: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('8.0000'))
+    cost_per_hour: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    
+    # Capacity Extensions
+    available_hours_per_day: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('8.0000'))
+    efficiency_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal('100.00'))
+    utilization_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal('100.00'))
+    status: Mapped[str] = mapped_column(String(20), default='ACTIVE') # ACTIVE, INACTIVE, MAINTENANCE
+
+    calendar_events = relationship('WorkCenterCalendar', back_populates='work_center', cascade='all, delete-orphan')
+
+
+class WorkCenterCalendar(Base):
+    __tablename__ = 'work_center_calendars'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    event_date: Mapped[datetime] = mapped_column(DateTime, index=True)
+    event_type: Mapped[str] = mapped_column(String(50)) # HOLIDAY, MAINTENANCE, DOWNTIME
+    hours_blocked: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    description: Mapped[Optional[str]] = mapped_column(String(250), nullable=True)
+
+    work_center = relationship('WorkCenter', back_populates='calendar_events')
+
+
+class Routing(Base):
+    __tablename__ = 'routings'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    revision: Mapped[str] = mapped_column(String(20), default='V1.0')
+    status: Mapped[str] = mapped_column(String(20), default='ACTIVE') # DRAFT, ACTIVE, OBSOLETE
+
+    item = relationship('Item')
+    operations = relationship('RoutingOperation', back_populates='routing', cascade='all, delete-orphan')
+
+
+class RoutingOperation(Base):
+    __tablename__ = 'routing_operations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    routing_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('routings.id'), index=True)
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    operation_name: Mapped[str] = mapped_column(String(100))
+    setup_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    run_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+
+    routing = relationship('Routing', back_populates='operations')
+    work_center = relationship('WorkCenter')
+
+
+class WorkOrderMaterial(Base):
+    __tablename__ = 'work_order_materials'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_orders.id'), index=True)
+    component_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    quantity_required: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    quantity_issued: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    scrap_factor: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    uom: Mapped[str] = mapped_column(String(20))
+
+    work_order = relationship('WorkOrder')
+    component_item = relationship('Item')
+
+
+class WorkOrderOperation(Base):
+    __tablename__ = 'work_order_operations'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_orders.id'), index=True)
+    sequence_no: Mapped[int] = mapped_column(Integer)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    operation_name: Mapped[str] = mapped_column(String(100))
+    setup_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    run_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    actual_setup_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    actual_run_time_minutes: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default='PENDING') # PENDING, IN_PROGRESS, COMPLETED
+
+    work_order = relationship('WorkOrder')
+    work_center = relationship('WorkCenter')
+
+
+class ManufacturingBatch(Base):
+    __tablename__ = 'manufacturing_batches'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    finished_good_batch_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_orders.id'), index=True)
+    produced_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    scrap_qty: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    yield_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2))
+
+    item = relationship('Item')
+    work_order = relationship('WorkOrder')
+    materials = relationship('ManufacturingBatchMaterial', back_populates='batch', cascade='all, delete-orphan')
+
+
+class ManufacturingBatchMaterial(Base):
+    __tablename__ = 'manufacturing_batch_materials'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    batch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('manufacturing_batches.id'), index=True)
+    component_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('items.id'), index=True)
+    source_batch_number: Mapped[str] = mapped_column(String(50))
+    quantity_consumed: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+
+    batch = relationship('ManufacturingBatch', back_populates='materials')
+    component_item = relationship('Item')
+
+
+class QualityInspectionResult(Base):
+    __tablename__ = 'quality_inspection_results'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    inspection_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('quality_inspections.id'), index=True)
+    parameter_name: Mapped[str] = mapped_column(String(100))
+    expected_value: Mapped[str] = mapped_column(String(100))
+    actual_value: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20)) # PASS, FAIL
+
+    inspection = relationship('QualityInspection', back_populates='results')
+
+
+class ManufacturingAuditLog(Base):
+    __tablename__ = 'manufacturing_audit_logs'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    work_order_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('work_orders.id'), nullable=True, index=True)
+    bom_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('bill_of_materials.id'), nullable=True, index=True)
+    routing_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('routings.id'), nullable=True, index=True)
+    action_type: Mapped[str] = mapped_column(String(50)) # WO_CHANGE, BOM_REV, ROUTING_CHANGE, MAT_ISSUE, SCRAP_POST, QC_DECISION
+    before_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    after_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    user_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    work_order = relationship('WorkOrder')
+    bom = relationship('BillOfMaterial')
+    routing = relationship('Routing')
+    user = relationship('User')
+
+
+from sqlalchemy import UniqueConstraint, Index
+
+class WorkCenterAlternate(Base):
+    __tablename__ = 'work_center_alternates'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    primary_work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    alternate_work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'))
+    priority: Mapped[int] = mapped_column(Integer, default=1)
+
+    primary_work_center = relationship('WorkCenter', foreign_keys=[primary_work_center_id])
+    alternate_work_center = relationship('WorkCenter', foreign_keys=[alternate_work_center_id])
+
+
+class CapacityPlan(Base):
+    __tablename__ = 'capacity_plans'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_number: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    planning_start_date: Mapped[datetime] = mapped_column(DateTime)
+    planning_end_date: Mapped[datetime] = mapped_column(DateTime)
+    planning_horizon_days: Mapped[int] = mapped_column(Integer)
+    scheduling_mode: Mapped[str] = mapped_column(String(20)) # FORWARD, BACKWARD, HYBRID
+    schedule_freeze_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default='DRAFT') # DRAFT, ACTIVE, ARCHIVED
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    generated_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+
+    generated_by = relationship('User')
+    scenarios = relationship('PlanningScenario', back_populates='capacity_plan', cascade='all, delete-orphan')
+
+
+class PlanningScenario(Base):
+    __tablename__ = 'planning_scenarios'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(100))
+    capacity_plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('capacity_plans.id'), index=True)
+    scenario_type: Mapped[str] = mapped_column(String(50)) # BASE_PLAN, OVERTIME, EXTRA_SHIFT, MACHINE_BREAKDOWN, CAPACITY_EXPANSION
+    created_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey('users.id'), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    capacity_plan = relationship('CapacityPlan', back_populates='scenarios')
+    created_by = relationship('User')
+
+
+class CapacityRequirement(Base):
+    __tablename__ = 'capacity_requirements'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    capacity_plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('capacity_plans.id'), index=True)
+    work_order_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_orders.id'), index=True)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    operation_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_order_operations.id'), index=True)
+    required_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    scheduled_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    remaining_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    available_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    utilization_percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal('0.00'))
+    overload_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+
+    capacity_plan = relationship('CapacityPlan')
+    work_order = relationship('WorkOrder')
+    work_center = relationship('WorkCenter')
+    operation = relationship('WorkOrderOperation')
+
+
+class CapacityCalendar(Base):
+    __tablename__ = 'capacity_calendars'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    capacity_plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('capacity_plans.id'), index=True)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'))
+    date: Mapped[datetime] = mapped_column(DateTime)
+    available_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4))
+    overtime_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    planned_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    blocked_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    efficiency_factor: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal('1.00'))
+
+    capacity_plan = relationship('CapacityPlan')
+    work_center = relationship('WorkCenter')
+
+    __table_args__ = (
+        UniqueConstraint('capacity_plan_id', 'work_center_id', 'date', name='uq_plan_wc_date'),
+        Index('idx_cap_cal_wc_date', 'work_center_id', 'date'),
+    )
+
+
+class CapacityException(Base):
+    __tablename__ = 'capacity_exceptions'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    capacity_plan_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('capacity_plans.id'), index=True)
+    work_center_id: Mapped[uuid.UUID] = mapped_column(ForeignKey('work_centers.id'), index=True)
+    exception_type: Mapped[str] = mapped_column(String(50)) # OVERLOAD, UNDERLOAD, MAINTENANCE, HOLIDAY, LATE_DELIVERY
+    exception_date: Mapped[datetime] = mapped_column(DateTime)
+    severity: Mapped[str] = mapped_column(String(20)) # INFO, WARNING, CRITICAL
+    message: Mapped[str] = mapped_column(String(250))
+    impact_hours: Mapped[Decimal] = mapped_column(Numeric(18, 4), default=Decimal('0.0000'))
+    late_days: Mapped[int] = mapped_column(Integer, default=0)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    capacity_plan = relationship('CapacityPlan')
+    work_center = relationship('WorkCenter')
+
+
+class APSLock(Base):
+    __tablename__ = 'aps_locks'
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), unique=True, index=True)
+    lock_acquired_at: Mapped[datetime] = mapped_column(DateTime)
+    lock_expires_at: Mapped[datetime] = mapped_column(DateTime)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 

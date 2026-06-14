@@ -13,8 +13,8 @@ const ErrorAnalyticsDashboard: React.FC = () => {
   useEffect(() => {
     const fetchApiMetrics = async () => {
       try {
-        const data = await get('/observability/metrics/api');
-        setLogs(data);
+        const res = await get('/observability/metrics/api');
+        setLogs(res.data);
       } catch (error) {
         notification.error({ message: 'Failed to fetch API metrics' });
       } finally {

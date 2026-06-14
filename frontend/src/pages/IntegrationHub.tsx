@@ -38,12 +38,12 @@ const IntegrationHub: React.FC = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [configsData, logsData] = await Promise.all([
+      const [configsRes, logsRes] = await Promise.all([
         get('/integrations/configs'),
         get('/integrations/logs')
       ]);
-      setConfigs(configsData);
-      setLogs(logsData);
+      setConfigs(configsRes.data);
+      setLogs(logsRes.data);
     } catch (error) {
       notification.error({ message: 'Failed to load integration data' });
     } finally {
@@ -160,12 +160,15 @@ const IntegrationHub: React.FC = () => {
       >
         <Form form={form} layout="vertical" onFinish={handleAddIntegration}>
           <Form.Item name="provider_name" label="Provider / Target" rules={[{ required: true }]}>
-            <Select placeholder="Select Provider">
-              <Option value="TALLY">Tally Prime (XML ODBC/API)</Option>
-              <Option value="SAP">SAP ECC/S4HANA (OData/BAPI)</Option>
-              <Option value="ZOHO">Zoho Books</Option>
-              <Option value="WEBHOOK">Generic Webhook</Option>
-            </Select>
+            <Select 
+              placeholder="Select Provider"
+              options={[
+                { value: "TALLY", label: "Tally Prime (XML ODBC/API)" },
+                { value: "SAP", label: "SAP ECC/S4HANA (OData/BAPI)" },
+                { value: "ZOHO", label: "Zoho Books" },
+                { value: "WEBHOOK", label: "Generic Webhook" }
+              ]}
+            />
           </Form.Item>
           
           <Form.Item name="endpoint_url" label="Endpoint URL">
@@ -173,12 +176,14 @@ const IntegrationHub: React.FC = () => {
           </Form.Item>
 
           <Form.Item name="auth_type" label="Authentication Type" initialValue="BEARER">
-            <Select>
-              <Option value="NONE">None</Option>
-              <Option value="BASIC">Basic Auth</Option>
-              <Option value="BEARER">Bearer Token</Option>
-              <Option value="API_KEY">API Key</Option>
-            </Select>
+            <Select
+              options={[
+                { value: "NONE", label: "None" },
+                { value: "BASIC", label: "Basic Auth" },
+                { value: "BEARER", label: "Bearer Token" },
+                { value: "API_KEY", label: "API Key" }
+              ]}
+            />
           </Form.Item>
 
           <Divider />

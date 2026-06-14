@@ -1,22 +1,40 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  FileText, Search, Plus, Filter, RefreshCw, DollarSign, ShieldAlert, Award
+  FileText, Search, Plus, Filter, RefreshCw, ShieldAlert, Award
 } from 'lucide-react';
 import { usePurchaseOrders } from '../hooks/queries/usePurchaseOrders';
 import { DataTable } from '../components/ui/DataTable';
 import { columns } from './pos/columns';
+import { DataContainer } from '../components/common/DataContainer';
+import { useHeaderStore } from '../store/headerStore';
+import { FilterToolbar } from '../components/common/FilterToolbar';
 
 const POList: React.FC = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const setHeader = useHeaderStore(state => state.setHeader);
+
+  useEffect(() => {
+    setHeader({
+      actions: (
+        <Link
+          to="/pos/convert"
+          className="flex items-center gap-2 px-4 py-2 text-sm font-bold text-white bg-erp-primary hover:bg-blue-800 rounded-erp transition-all shadow-sm"
+        >
+          <Plus className="w-4 h-4" />
+          Convert Won RFQ
+        </Link>
+      )
+    });
+    return () => useHeaderStore.getState().clearHeader();
+  }, [setHeader]);
 
   const { data: pos = [], isLoading, refetch } = usePurchaseOrders({
     search: search || undefined,
     status_filter: statusFilter || undefined
   });
 
-  // KPIs
   const totalOpenCommitment = pos
     .filter((p: any) => p.status !== 'CLOSED' && p.status !== 'CANCELLED')
     .reduce((sum: number, p: any) => sum + parseFloat(p.total_amount || 0), 0);
@@ -29,29 +47,10 @@ const POList: React.FC = () => {
   }).length;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 bg-slate-50 min-h-screen">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <DollarSign className="w-8 h-8 text-blue-600 bg-blue-50 rounded-xl p-1 border border-blue-100" />
-            Purchase Order Commitments
-          </h1>
-          <p className="text-slate-500 mt-1.5 font-medium">Review legally binding supplier orders, amendments and tracking fulfillment statuses</p>
-        </div>
-
-        <Link
-          to="/pos/convert"
-          className="flex items-center gap-2 px-5 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-md shadow-blue-600/10"
-        >
-          <Plus className="w-4.5 h-4.5" />
-          Convert Won RFQ
-        </Link>
-      </div>
-
+    <div className="flex flex-col gap-6">
       {/* KPI Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <DataContainer className="p-6 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Gross Open Commitments</span>
             <span className="text-2xl font-black text-slate-900">
@@ -61,9 +60,9 @@ const POList: React.FC = () => {
           <div className="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 border border-blue-100 font-extrabold">
             ₹
           </div>
-        </div>
+        </DataContainer>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <DataContainer className="p-6 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Outstanding POs Count</span>
             <span className="text-2xl font-black text-slate-900">{openCount} active orders</span>
@@ -71,9 +70,9 @@ const POList: React.FC = () => {
           <div className="w-12 h-12 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
             <FileText className="w-5 h-5" />
           </div>
-        </div>
+        </DataContainer>
 
-        <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm flex items-center justify-between">
+        <DataContainer className="p-6 flex items-center justify-between">
           <div className="space-y-1">
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Delayed Delivery Backlogs</span>
             <span className={`text-2xl font-black ${delayedCount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>
@@ -87,30 +86,21 @@ const POList: React.FC = () => {
           }`}>
             <ShieldAlert className="w-5 h-5" />
           </div>
-        </div>
+        </DataContainer>
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2">
-          <Search className="w-4.5 h-4.5 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by PO number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && refetch()}
-            className="w-full bg-transparent border-none outline-none text-sm text-slate-900"
-          />
-        </div>
-
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400" />
+      <DataContainer>
+        {/* Filters */}
+        <FilterToolbar 
+          searchQuery={search} 
+          onSearchChange={setSearch} 
+          searchPlaceholder="Search by PO number..."
+          onSearchSubmit={() => refetch()}
+          filters={
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 font-semibold text-slate-600"
+              className="text-sm bg-transparent border-none text-slate-700 outline-none cursor-pointer"
             >
               <option value="">All Statuses</option>
               <option value="DRAFT">DRAFT</option>
@@ -120,29 +110,31 @@ const POList: React.FC = () => {
               <option value="FULFILLED">FULFILLED</option>
               <option value="CLOSED">CLOSED</option>
             </select>
-          </div>
+          }
+          actions={
+            <button
+              onClick={() => refetch()}
+              className="p-1.5 hover:bg-slate-100 rounded-erp text-slate-500 transition-colors bg-white shadow-sm"
+              title="Refresh Data"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          }
+        />
 
-          <button
-            onClick={() => refetch()}
-            className="p-1.5 hover:bg-slate-50 rounded-lg text-slate-500 transition-all border border-slate-100"
-          >
-            <RefreshCw className="w-4.5 h-4.5" />
-          </button>
-        </div>
-      </div>
-
-      {/* PO Listing */}
-      {pos.length === 0 && !isLoading ? (
-        <div className="flex flex-col items-center justify-center py-20 text-center bg-white rounded-2xl border border-slate-100 shadow-sm p-6 gap-3">
-          <Award className="w-12 h-12 text-slate-350" />
-          <div>
-            <p className="text-sm font-bold text-slate-900">No Purchase Orders Located</p>
-            <p className="text-xs text-slate-400 mt-1">Convert winning vendor quote proposals to award formal POs.</p>
+        {/* PO Listing */}
+        {pos.length === 0 && !isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 text-center">
+            <Award className="w-12 h-12 text-slate-300" />
+            <div className="mt-4">
+              <p className="text-sm font-bold text-slate-900">No Purchase Orders Located</p>
+              <p className="text-xs text-slate-500 mt-1">Convert winning vendor quote proposals to award formal POs.</p>
+            </div>
           </div>
-        </div>
-      ) : (
-        <DataTable columns={columns} data={pos} isLoading={isLoading} />
-      )}
+        ) : (
+          <DataTable columns={columns} data={pos} isLoading={isLoading} />
+        )}
+      </DataContainer>
     </div>
   );
 };

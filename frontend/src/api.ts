@@ -49,7 +49,43 @@ api.interceptors.response.use(
     } else {
       // Global toast for errors
       if (error.response) {
-        const errorMsg = error.response.data?.detail || error.response.data?.message || "An unexpected error occurred.";
+        let errorMsg = error.response.data?.detail || error.response.data?.message || "An unexpected error occurred.";
+        if (typeof errorMsg === 'object' && errorMsg !== null) {
+          if (Array.isArray(errorMsg)) {
+            // It's a FastAPI validation error list (or a simple list of errors)
+            errorMsg = errorMsg.map((err: any) => {
+              if (typeof err === 'object' && err !== null) {
+                const locStr = err.loc ? err.loc.join('.') : '';
+                const msg = err.msg || err.error || JSON.stringify(err);
+                const row = err.row !== undefined ? `Row ${err.row}: ` : '';
+                return `${row}${locStr ? locStr + ': ' : ''}${msg}`;
+              }
+              return String(err);
+            }).join(', ');
+          } else {
+            // It's a dictionary like {"message": "...", "errors": [...]} or similar
+            const msg = errorMsg.message || errorMsg.detail || JSON.stringify(errorMsg);
+            const errors = errorMsg.errors;
+            if (Array.isArray(errors)) {
+              const errorsStr = errors.map((err: any) => {
+                if (typeof err === 'object' && err !== null) {
+                  const row = err.row !== undefined ? `Row ${err.row}: ` : '';
+                  let errDetail = err.error;
+                  if (Array.isArray(errDetail)) {
+                    errDetail = errDetail.map((e: any) => typeof e === 'object' ? (e.msg || JSON.stringify(e)) : e).join(', ');
+                  } else if (typeof errDetail === 'object') {
+                    errDetail = JSON.stringify(errDetail);
+                  }
+                  return `${row}${errDetail || JSON.stringify(err)}`;
+                }
+                return String(err);
+              }).join(' | ');
+              errorMsg = `${msg} Details: ${errorsStr}`;
+            } else {
+              errorMsg = typeof msg === 'object' ? JSON.stringify(msg) : String(msg);
+            }
+          }
+        }
         toast.error(`Error: ${errorMsg}`);
       } else {
         toast.error("Network error. Please check backend server.");
@@ -129,6 +165,8 @@ export const bulkImportMaster = (entity: string, file: File) => {
   });
 };
 export const exportMasterUrl = (entity: string) => `${BASE_URL || window.location.origin}/api/masters/${entity}/export`;
+export const exportMaster = (entity: string) => api.get(`/masters/${entity}/export`, { responseType: 'blob' });
+export const exportMasterTemplate = (entity: string) => api.get(`/masters/${entity}/template`, { responseType: 'blob' });
 
 // -- Workflow Engine Callers --
 export const getWorkflowDefinitions = () => api.get('/workflow/definitions');
@@ -202,6 +240,37 @@ export const exportMismatchesUrl = () => `${BASE_URL || window.location.origin}/
 // -- Enterprise Document Generation Callers --
 export const generateDocument = (documentType: string, referenceId: string) => api.post(`/documents/generate/${documentType}/${referenceId}`);
 export const getLatestDocumentUrl = (documentType: string, referenceId: string) => api.get(`/documents/${documentType}/${referenceId}/latest`);
+
+// -- Vendor Collaboration Portal Callers --
+export const getVendorDashboard = () => api.get('/portal/vendor/dashboard');
+export const getVendorRFQs = () => api.get('/portal/vendor/rfqs');
+export const getVendorRFQDetails = (rfqId: string) => api.get(`/portal/vendor/rfqs/${rfqId}`);
+export const submitVendorRFQQuotation = (rfqId: string, data: any) => api.post(`/portal/vendor/rfqs/${rfqId}/quote`, data);
+export const getVendorPOs = () => api.get('/portal/vendor/pos');
+export const acknowledgeVendorPO = (poId: string) => api.post(`/portal/vendor/pos/${poId}/acknowledge`);
+
+// -- General Ledger (Finance Core) Callers --
+export const getGLAccounts = () => api.get('/finance-core/accounts');
+export const createGLAccount = (data: any) => api.post('/finance-core/accounts', data);
+export const getGLJournals = () => api.get('/finance-core/journals');
+export const postGLJournal = (data: any) => api.post('/finance-core/journals', data);
+export const reverseGLJournal = (id: string) => api.post(`/finance-core/journals/${id}/reverse`);
+export const getGLPeriods = () => api.get('/finance-core/periods');
+export const updateGLPeriodStatus = (id: string, status: string) => api.post(`/finance-core/periods/${id}/status`, { status });
+export const getGLFiscalYears = () => api.get('/finance-core/fiscal-years');
+export const createGLFiscalYear = (data: any) => api.post('/finance-core/fiscal-years', data);
+export const updateGLFiscalYearStatus = (id: string, status: string) => api.post(`/finance-core/fiscal-years/${id}/status`, { status });
+export const getTrialBalance = () => api.get('/finance-core/reports/trial-balance');
+export const getAccountLedger = (accountId: string) => api.get(`/finance-core/reports/account-ledger/${accountId}`);
+export const getFinanceDashboardSummary = () => api.get('/finance-core/dashboard-summary');
+
+// -- Finance Reporting (Phase 11) Callers --
+export const getBalanceSheet = (params?: { as_of_date?: string; comparison_date?: string }) => api.get('/finance/balance-sheet', { params });
+export const getProfitAndLoss = (params?: { start_date?: string; end_date?: string; comparison_start?: string; comparison_end?: string }) => api.get('/finance/profit-loss', { params });
+export const getCashFlow = (params?: { start_date?: string; end_date?: string }) => api.get('/finance/cash-flow', { params });
+export const getAPReconciliation = () => api.get('/finance/ap-reconciliation');
+export const getGRNIReconciliation = () => api.get('/finance/grni-reconciliation');
+export const getFinanceHealth = () => api.get('/finance/health');
 
 // --- Named Proxy API Helper Exports ---
 export const get = (url: string, config?: any) => api.get(url, config);

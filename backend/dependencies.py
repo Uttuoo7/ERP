@@ -178,3 +178,26 @@ def get_tenant_id(current_user: models.User = Depends(get_current_user)) -> str:
     Dependency to resolve the active tenant ID from the authenticated user.
     """
     return str(current_user.tenant_id) if current_user.tenant_id else None
+
+
+# Reusable inventory dependencies
+require_revaluation_user = require_role([
+    models.Role.ADMIN,
+    models.Role.SUPER_ADMIN,
+    models.Role.FINANCE_MANAGER,
+    models.Role.FINANCE
+])
+
+require_snapshot_user = require_role([
+    models.Role.ADMIN,
+    models.Role.SUPER_ADMIN,
+    models.Role.FINANCE_MANAGER,
+    models.Role.WAREHOUSE_MANAGER
+])
+
+require_inventory_admin_user = require_role([
+    models.Role.ADMIN,
+    models.Role.SUPER_ADMIN,
+    models.Role.FINANCE_MANAGER
+])
+

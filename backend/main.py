@@ -240,6 +240,15 @@ app.include_router(inventory_router, prefix="/api/inventory", tags=["Inventory L
 from .finance_router import router as finance_router
 app.include_router(finance_router, prefix="/api/finance", tags=["Universal Finance & Ledger Engine"])
 
+from .finance_core_router import router as finance_core_router
+app.include_router(finance_core_router)
+
+from .finance_reports_router import router as finance_reports_router
+app.include_router(finance_reports_router)
+
+from backend.services.posting_engine import PostingEngine
+PostingEngine.register_listeners()
+
 from .ap_router import router as ap_router
 app.include_router(ap_router, prefix="/api/ap", tags=["Accounts Payable"])
 

@@ -243,7 +243,7 @@ const RFQDetails: React.FC = () => {
           </div>
         </div>
 
-        {rfq.quotations.length > 0 && (
+        {((rfq && rfq.quotations) || []).length > 0 && (
           <Link
             to={`/rfqs/${rfq.id}/compare`}
             className="flex items-center gap-1.5 px-5 py-2.5 text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl transition-all shadow-md shadow-indigo-600/10"
@@ -293,7 +293,7 @@ const RFQDetails: React.FC = () => {
           {/* Catalog items requested */}
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
             <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest flex items-center gap-2">
-              <Building className="w-4 h-4 text-blue-600" /> Procurement Line Items ({rfq.line_items.length})
+              <Building className="w-4 h-4 text-blue-600" /> Procurement Line Items ({((rfq && rfq.line_items) || []).length})
             </h3>
 
             <div className="overflow-x-auto">
@@ -308,7 +308,7 @@ const RFQDetails: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                  {rfq.line_items.map((line) => (
+                  {((rfq && rfq.line_items) || []).map((line) => (
                     <tr key={line.id} className="hover:bg-slate-50/20">
                       <td className="px-3 py-3.5 font-bold text-blue-600">{line.item.sku}</td>
                       <td className="px-3 py-3.5 text-slate-800">{line.item.name}</td>
@@ -345,11 +345,11 @@ const RFQDetails: React.FC = () => {
             </div>
 
             <div className="space-y-3">
-              {rfq.invitations.length === 0 ? (
+              {((rfq && rfq.invitations) || []).length === 0 ? (
                 <p className="text-xs text-slate-400 py-6 text-center">No suppliers invited. Click 'Invite' to coordinate queries.</p>
               ) : (
-                rfq.invitations.map((invite) => {
-                  const hasResponded = rfq.quotations.some(q => q.vendor.name === invite.vendor.name);
+                ((rfq && rfq.invitations) || []).map((invite) => {
+                  const hasResponded = ((rfq && rfq.quotations) || []).some(q => q.vendor?.name === invite.vendor?.name);
                   return (
                     <div key={invite.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
                       <div className="space-y-0.5">
@@ -382,21 +382,21 @@ const RFQDetails: React.FC = () => {
           {/* Quotations Submissions Registry */}
           <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
             <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest border-b border-slate-50 pb-2">
-              Bids Quotations Log ({rfq.quotations.length})
+              Bids Quotations Log ({((rfq && rfq.quotations) || []).length})
             </h3>
 
             <div className="space-y-3 max-h-[220px] overflow-y-auto pr-1">
-              {rfq.quotations.length === 0 ? (
+              {((rfq && rfq.quotations) || []).length === 0 ? (
                 <p className="text-xs text-slate-400 py-8 text-center">No quotation response sheets received.</p>
               ) : (
-                rfq.quotations.map((quote) => (
+                ((rfq && rfq.quotations) || []).map((quote) => (
                   <div key={quote.id} className={`p-3.5 rounded-xl border flex items-center justify-between text-xs transition-all ${
                     quote.is_selected 
                       ? 'bg-emerald-50/30 border-emerald-200' 
                       : 'bg-slate-50 border-slate-150'
                   }`}>
                     <div className="space-y-0.5">
-                      <span className="font-extrabold text-slate-900 block">{quote.quotation_number} - {quote.vendor.name}</span>
+                      <span className="font-extrabold text-slate-900 block">{quote.quotation_number} - {quote.vendor?.name}</span>
                       <span className="text-[10px] text-slate-400 font-bold uppercase">Lead: {quote.lead_time_days} days | Total: ₹{quote.total_quoted_price.toFixed(2)}</span>
                     </div>
 
@@ -499,7 +499,7 @@ const RFQDetails: React.FC = () => {
               <div className="space-y-2 border-t border-b border-slate-100 py-3">
                 <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Item Pricing Grid</span>
                 <div className="space-y-2">
-                  {rfq.line_items.map(line => (
+                  {((rfq && rfq.line_items) || []).map(line => (
                     <div key={line.id} className="flex items-center justify-between gap-4 p-2 bg-slate-50 rounded-lg border border-slate-150">
                       <div className="space-y-0.5">
                         <span className="font-extrabold text-slate-800">{line.item.sku}</span>

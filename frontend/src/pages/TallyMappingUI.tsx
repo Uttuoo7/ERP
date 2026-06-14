@@ -27,8 +27,8 @@ const TallyMappingUI: React.FC = () => {
     setLoading(true);
     try {
       const url = entityFilter ? `/tally-mappings?entity_type=${entityFilter}` : `/tally-mappings`;
-      const data = await get(url);
-      setMappings(data);
+      const res = await get(url);
+      setMappings(res.data);
     } catch (error) {
       notification.error({ message: 'Failed to fetch ledger mappings' });
     } finally {
@@ -89,12 +89,16 @@ const TallyMappingUI: React.FC = () => {
       <Card title="Add New Mapping" style={{ marginBottom: 24 }}>
         <Form form={form} layout="inline" onFinish={handleAddMapping}>
           <Form.Item name="entity_type" rules={[{ required: true, message: 'Required' }]}>
-            <Select placeholder="Entity Type" style={{ width: 150 }}>
-              <Option value="VENDOR">Vendor</Option>
-              <Option value="TAX">Tax Ledger</Option>
-              <Option value="BANK">Bank Account</Option>
-              <Option value="COST_CENTER">Cost Center</Option>
-            </Select>
+            <Select 
+              placeholder="Entity Type" 
+              style={{ width: 150 }}
+              options={[
+                { value: "VENDOR", label: "Vendor" },
+                { value: "TAX", label: "Tax Ledger" },
+                { value: "BANK", label: "Bank Account" },
+                { value: "COST_CENTER", label: "Cost Center" }
+              ]}
+            />
           </Form.Item>
           <Form.Item name="internal_id" rules={[{ required: true, message: 'Required' }]}>
             <Input placeholder="Internal ERP ID or Code" />
@@ -117,12 +121,13 @@ const TallyMappingUI: React.FC = () => {
             style={{ width: 150 }} 
             allowClear 
             placeholder="Filter by Entity"
-          >
-            <Option value="VENDOR">Vendor</Option>
-            <Option value="TAX">Tax Ledger</Option>
-            <Option value="BANK">Bank Account</Option>
-            <Option value="COST_CENTER">Cost Center</Option>
-          </Select>
+            options={[
+              { value: "VENDOR", label: "Vendor" },
+              { value: "TAX", label: "Tax Ledger" },
+              { value: "BANK", label: "Bank Account" },
+              { value: "COST_CENTER", label: "Cost Center" }
+            ]}
+          />
         }
       >
         <Table 

@@ -72,7 +72,7 @@ const DataMigrationWizard: React.FC = () => {
         file_path: filePath,
         mapping: mapping
       });
-      setValidationResult(result);
+      setValidationResult(result.data);
       setCurrentStep(2);
     } catch (e) {
       notification.error({ message: 'Validation Failed' });
@@ -89,7 +89,7 @@ const DataMigrationWizard: React.FC = () => {
         file_path: filePath,
         mapping: mapping
       });
-      setExecutionResult(result);
+      setExecutionResult(result.data);
       setCurrentStep(3);
     } catch (e) {
       notification.error({ message: 'Import Execution Failed' });
@@ -105,10 +105,15 @@ const DataMigrationWizard: React.FC = () => {
           <div style={{ marginTop: 24 }}>
             <div style={{ marginBottom: 16 }}>
               <Text strong>Select Target Entity: </Text>
-              <Select value={entityType} onChange={setEntityType} style={{ width: 200 }}>
-                <Option value="VENDOR">Vendors</Option>
-                <Option value="ITEM">Items</Option>
-              </Select>
+              <Select 
+                value={entityType} 
+                onChange={setEntityType} 
+                style={{ width: 200 }}
+                options={[
+                  { value: "VENDOR", label: "Vendors" },
+                  { value: "ITEM", label: "Items" }
+                ]}
+              />
             </div>
             <Dragger customRequest={handleUpload} showUploadList={false} accept=".csv, .xlsx">
               <p className="ant-upload-drag-icon">
@@ -133,11 +138,8 @@ const DataMigrationWizard: React.FC = () => {
                     placeholder="Select ERP Field (Optional)"
                     onChange={(val) => handleMappingChange(header, val)}
                     allowClear
-                  >
-                    {erpFields[entityType].map(field => (
-                      <Option key={field} value={field}>{field}</Option>
-                    ))}
-                  </Select>
+                    options={erpFields[entityType].map(field => ({ value: field, label: field }))}
+                  />
                 </div>
               </div>
             ))}

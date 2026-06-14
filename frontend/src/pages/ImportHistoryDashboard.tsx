@@ -14,7 +14,7 @@ const ImportHistoryDashboard: React.FC = () => {
     const fetchHistory = async () => {
       try {
         const data = await get('/import/history');
-        setBatches(data);
+        setBatches(data.data);
       } catch (error) {
         notification.error({ message: 'Failed to fetch import history' });
       } finally {

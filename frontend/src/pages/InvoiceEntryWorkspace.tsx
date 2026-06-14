@@ -1,10 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  FileText, ShieldCheck, Loader2, Landmark, Plus, Trash2, ArrowLeft, Layers, Calendar, Landmark as Bank
+  FileText, ShieldCheck, Loader2, Landmark, Plus, Trash2, ArrowLeft, Layers, Calendar, Landmark as Bank, CheckCircle2, AlertTriangle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { createInvoice, getPOs, getPO, getGRNs, getGRN } from "../api";
+
+import { FormLayout, FormBody, FormSplitPane } from '../components/common/form/FormLayout';
+import { FormStickyBar } from '../components/common/form/FormStickyBar';
+import { DocumentContextHeader } from '../components/common/form/DocumentContextHeader';
+import { FormSection } from '../components/common/form/FormSection';
+import { StatusBadge } from '../components/common/StatusBadge';
+import { WorkflowTimeline } from '../components/common/form/WorkflowTimeline';
+import { AttachmentSection } from '../components/common/form/AttachmentSection';
+import { RecentActivityFeed } from '../components/common/form/RecentActivityFeed';
+import { ApprovalSummaryCard } from '../components/common/form/ApprovalSummaryCard';
+import { ThreeWayMatchCard } from '../components/common/form/ThreeWayMatchCard';
 
 const InvoiceEntryWorkspace: React.FC = () => {
   const navigate = useNavigate();
@@ -141,244 +152,253 @@ const InvoiceEntryWorkspace: React.FC = () => {
     }
   };
 
-  return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 bg-slate-50 min-h-screen">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200 pb-5">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/invoices")}
-            className="p-2 hover:bg-slate-150 rounded-xl text-slate-500 hover:text-slate-700 transition-all border border-slate-200"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
-          <div>
-            <h1 className="text-2xl font-black text-slate-900 leading-none">Accounts Payable Entry Workspace</h1>
-            <p className="text-xs text-slate-400 font-semibold mt-1">Capture invoice details, allocate to active PO/GRN lines, and configure taxes</p>
+  // Calculated Mocks for AP Readiness
+  const invoiceTotal = lineItems.reduce((acc, curr) => acc + (parseFloat(curr.quantity_billed) * parseFloat(curr.unit_price)), 0) + (parseFloat(gstAmount) || 0) - (parseFloat(discountAmount) || 0);
+  const poAmountMock = 125000;
+  const grnAmountMock = grnId ? 120000 : 0;
+  const varianceMock = invoiceTotal - (grnId ? grnAmountMock : poAmountMock);
+  const hasVariance = varianceMock > 0;
+  
+  const paymentReady = !hasVariance && poId && grnId && lineItems.length > 0;
+
+  const timelineStages: any[] = [
+    { id: '1', label: 'Received', status: 'completed' },
+    { id: '2', label: '3-Way Match', status: paymentReady ? 'completed' : 'current' },
+    { id: '3', label: 'AP Review', status: 'pending' },
+    { id: '4', label: 'Approved', status: 'pending' },
+    { id: '5', label: 'Paid', status: 'pending' },
+  ];
+
+  const contextDetails = [
+    { label: "Invoice Number", value: invoiceNumber || <span className="text-slate-400 italic">Draft (Unsaved)</span> },
+    { label: "Vendor", value: poId ? posList.find(p => p.id === poId)?.vendor?.name : "Not Selected" },
+    { label: "Linked PO", value: poId ? posList.find(p => p.id === poId)?.po_number : "None" },
+    { label: "Linked GRN", value: grnId ? grnsList.find(g => g.id === grnId)?.grn_number : "None" },
+    { label: "Invoice Date", value: new Date().toLocaleDateString() },
+    { label: "Due Date", value: "Net 30 (Pending)" },
+    { label: "Status", value: <StatusBadge status="neutral" label="DRAFT" /> },
+  ];
+
+  const matchDetails = {
+    poMatch: !!poId,
+    poVariance: !poId ? "Missing Reference" : undefined,
+    grnMatch: !!grnId,
+    grnVariance: !grnId ? "Awaiting Receipt" : undefined,
+    invoiceMatch: !hasVariance,
+    invoiceVariance: hasVariance ? `₹${varianceMock.toLocaleString()} Overbilled` : undefined
+  };
+
+  const mockApprovals = {
+    currentApprover: 'AP Supervisor',
+    approvalLevel: 'L1 AP Verification',
+    escalationStatus: 'Normal' as const,
+    slaDueDate: 'Tomorrow, 5:00 PM'
+  };
+
+  const leftPane = (
+    <div className="space-y-6">
+      <FormSection title="Invoice Processing Parameters" icon={<FileText className="w-4 h-4" />}>
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Purchase Order Ref <span className="text-red-500">*</span></label>
+              <select required value={poId} onChange={(e) => setPoId(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-medium text-slate-800 bg-white shadow-sm transition-all">
+                <option value="">-- Select Active PO --</option>
+                {posList.map(p => <option key={p.id} value={p.id}>{p.po_number} (Vendor: {p.vendor?.name})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Goods Receipt (GRN) Ref</label>
+              <select value={grnId} disabled={!poId} onChange={(e) => setGrnId(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-medium text-slate-800 bg-white shadow-sm transition-all">
+                <option value="">-- No linked GRN (Full Accrual) --</option>
+                {grnsList.filter(g => g.po_id === poId).map(g => <option key={g.id} value={g.id}>{g.grn_number}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">ERP Invoice Number <span className="text-red-500">*</span></label>
+              <input type="text" required placeholder="e.g. ERP-INV-998" value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-medium text-slate-800 bg-white shadow-sm transition-all" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Vendor Invoice Num</label>
+              <input type="text" placeholder="e.g. TX-994322" value={vendorInvoiceNumber} onChange={(e) => setVendorInvoiceNumber(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-medium text-slate-800 bg-white shadow-sm transition-all" />
+            </div>
           </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Net GST (₹)</label>
+              <input type="number" step="0.01" value={gstAmount} onChange={(e) => setGstAmount(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-bold text-slate-800 bg-white shadow-sm transition-all text-right" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">TDS Ded. (₹)</label>
+              <input type="number" step="0.01" value={tdsDeducted} onChange={(e) => setTdsDeducted(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-bold text-slate-800 bg-white shadow-sm transition-all text-right" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Disc Amount (₹)</label>
+              <input type="number" step="0.01" value={discountAmount} onChange={(e) => setDiscountAmount(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-bold text-rose-600 bg-white shadow-sm transition-all text-right" />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4">
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">Remarks / Narration</label>
+            <textarea rows={2} placeholder="Billing instructions..." value={remarks} onChange={(e) => setRemarks(e.target.value)} className="w-full px-3 py-1.5 text-sm border border-slate-200 rounded-md outline-none focus:border-blue-500 font-medium text-slate-800 bg-white shadow-sm transition-all" />
+          </div>
+        </div>
+      </FormSection>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <AttachmentSection attachments={[]} onUpload={() => {}} />
+        <RecentActivityFeed activities={[]} />
+      </div>
+    </div>
+  );
+
+  const rightPane = (
+    <>
+      {/* Payment Readiness Indicator */}
+      <div className={`p-4 rounded-xl border flex items-start gap-3 shadow-sm ${paymentReady ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-rose-50 border-rose-200 text-rose-800'}`}>
+        {paymentReady ? <CheckCircle2 className="w-5 h-5 shrink-0 mt-0.5 text-emerald-600" /> : <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-rose-600" />}
+        <div>
+          <h4 className="text-sm font-black">{paymentReady ? 'Ready for Payment' : 'Blocked'}</h4>
+          <p className="text-xs font-medium mt-0.5">{paymentReady ? '3-Way Match successful. Pending final approval.' : hasVariance ? 'Variance exceeds tolerance threshold.' : 'Missing GRN or Purchase Order reference.'}</p>
         </div>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 lg:grid-cols-3 gap-8 text-xs font-semibold text-slate-500">
-        {/* Left Column: Form Details */}
-        <div className="lg:col-span-2 space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-6">
-            <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest flex items-center gap-1.5 border-b border-slate-50 pb-2.5">
-              <Layers className="w-4.5 h-4.5 text-blue-600" /> Invoice Line Item Allocations
-            </h3>
+      <ThreeWayMatchCard details={matchDetails} />
 
-            {!poId ? (
-              <div className="text-center py-12 text-slate-400">
-                <FileText className="w-12 h-12 text-slate-350 mx-auto mb-2" />
-                <span>Select a Purchase Order reference to load item lines worksheet.</span>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse text-[11px]">
-                  <thead>
-                    <tr className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-bold text-slate-450 uppercase tracking-wider">
-                      <th className="px-3 py-2.5">Item Description</th>
-                      <th className="px-3 py-2.5 text-center">Ordered</th>
-                      <th className="px-3 py-2.5 text-center">Recd (GRN)</th>
-                      <th className="px-3 py-2.5 text-center w-24">Billed Qty</th>
-                      <th className="px-3 py-2.5 text-center w-28">Unit Price (₹)</th>
-                      <th className="px-3 py-2.5 text-center w-24">Line Tax (₹)</th>
-                      <th className="px-3 py-2.5 text-center w-24">Line Disc (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-150 font-semibold text-slate-700 bg-white">
-                    {lineItems.map((line, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50/20">
-                        <td className="px-3 py-3">
-                          <span className="font-extrabold text-slate-900 block">{line.item_name}</span>
-                          <span className="text-[9px] text-slate-400 font-semibold block">{line.item_sku}</span>
-                        </td>
-                        <td className="px-3 py-3 text-center text-slate-500">{line.quantity_ordered}</td>
-                        <td className="px-3 py-3 text-center text-slate-500">{line.quantity_received}</td>
-                        <td className="px-3 py-3">
-                          <input
-                            type="number"
-                            required
-                            min="0"
-                            value={line.quantity_billed}
-                            onChange={(e) => handleLineChange(idx, "quantity_billed", e.target.value)}
-                            className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 text-slate-800"
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <input
-                            type="number"
-                            step="0.01"
-                            required
-                            value={line.unit_price}
-                            onChange={(e) => handleLineChange(idx, "unit_price", e.target.value)}
-                            className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 text-slate-800"
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={line.tax_amount}
-                            onChange={(e) => handleLineChange(idx, "tax_amount", e.target.value)}
-                            className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 text-slate-800 text-indigo-650"
-                          />
-                        </td>
-                        <td className="px-3 py-3">
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={line.discount_amount}
-                            onChange={(e) => handleLineChange(idx, "discount_amount", e.target.value)}
-                            className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 text-slate-800 text-rose-600"
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+      <FormSection title="Financial & Matching Summary">
+        <div className="space-y-3.5">
+          <div className="flex justify-between items-center pb-2.5">
+            <span className="text-xs font-bold text-slate-500">Gross Invoice</span>
+            <span className="text-sm font-semibold text-slate-900">₹{invoiceTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
+            <span className="text-xs font-bold text-slate-500">PO Value</span>
+            <span className="text-sm font-semibold text-slate-600">₹{poAmountMock.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
+            <span className="text-xs font-bold text-slate-500">GRN Value</span>
+            <span className="text-sm font-semibold text-slate-600">₹{grnAmountMock.toLocaleString('en-IN')}</span>
+          </div>
+          <div className="flex justify-between items-center pt-1 pb-2.5 border-b border-slate-100">
+            <span className="text-xs font-bold text-slate-500">Variance</span>
+            <span className={`text-sm font-black ${hasVariance ? 'text-rose-600' : 'text-emerald-600'}`}>
+              {hasVariance ? `+₹${varianceMock.toLocaleString('en-IN')}` : '₹0.00'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-bold text-slate-400 uppercase">Target Currency</span>
+            <span className="text-xs font-black text-slate-900">INR</span>
           </div>
         </div>
+      </FormSection>
 
-        {/* Right Column: AP Form settings and totals */}
-        <div className="space-y-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm space-y-4">
-            <h3 className="text-sm font-extrabold text-slate-900 uppercase tracking-widest border-b border-slate-50 pb-2.5">
-              Invoice Summary Parameters
-            </h3>
+      <FormSection title="Payment Terms">
+        <div className="space-y-3">
+          <div className="flex justify-between">
+            <span className="text-xs font-bold text-slate-500">Payment Terms</span>
+            <span className="text-xs font-bold text-slate-900">Net 30</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-xs font-bold text-slate-500">Due Date</span>
+            <span className="text-xs font-bold text-slate-900">2023-11-15</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-xs font-bold text-slate-500">Days Remaining</span>
+            <span className="text-xs font-bold text-emerald-600">25 Days</span>
+          </div>
+        </div>
+      </FormSection>
 
-            <div className="space-y-4">
-              {/* Reference PO Picker */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Purchase Order Reference *</label>
-                <select
-                  required
-                  value={poId}
-                  onChange={(e) => setPoId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800 font-bold"
-                >
-                  <option value="">-- Select Active PO --</option>
-                  {posList.map(p => (
-                    <option key={p.id} value={p.id}>{p.po_number} (Vendor: {p.vendor?.name})</option>
-                  ))}
-                </select>
-              </div>
+      <ApprovalSummaryCard details={mockApprovals} />
+    </>
+  );
 
-              {/* Reference GRN Picker */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Goods Receipt (GRN) Reference (Optional)</label>
-                <select
-                  value={grnId}
-                  disabled={!poId}
-                  onChange={(e) => setGrnId(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800"
-                >
-                  <option value="">-- No linked GRN (Full Accrual) --</option>
-                  {grnsList.filter(g => g.po_id === poId).map(g => (
-                    <option key={g.id} value={g.id}>{g.grn_number} (Challan: {g.delivery_challan_number || 'N/A'})</option>
-                  ))}
-                </select>
-              </div>
+  return (
+    <FormLayout>
+      <FormStickyBar 
+        title="AP Invoice Processing"
+        onBack={() => navigate('/invoices')}
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => navigate('/invoices')}
+              className="px-4 py-1.5 text-sm font-bold text-slate-600 hover:text-slate-900 bg-transparent hover:bg-slate-100 rounded-md transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="flex items-center gap-1.5 px-5 py-1.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-md transition-all shadow-sm"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bank className="w-4 h-4" />}
+              {submitting ? "Registering..." : "Register Invoice"}
+            </button>
+          </>
+        }
+      />
 
-              <div className="grid grid-cols-2 gap-4">
-                {/* Invoice number */}
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">ERP Invoice Number *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. ERP-INV-998"
-                    value={invoiceNumber}
-                    onChange={(e) => setInvoiceNumber(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800"
-                  />
-                </div>
+      <div className="bg-white shadow-sm">
+        <DocumentContextHeader details={contextDetails} />
+        <WorkflowTimeline stages={timelineStages} />
+      </div>
 
-                {/* Vendor Invoice number */}
-                <div className="space-y-1.5">
-                  <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Vendor Reference Number</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. TX-994322"
-                    value={vendorInvoiceNumber}
-                    onChange={(e) => setVendorInvoiceNumber(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800"
-                  />
-                </div>
-              </div>
+      <FormBody>
+        <FormSplitPane left={leftPane} right={rightPane} />
 
-              <div className="grid grid-cols-3 gap-3">
-                {/* GST input */}
-                <div className="space-y-1.5">
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Net GST (₹)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={gstAmount}
-                    onChange={(e) => setGstAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800 text-right"
-                  />
-                </div>
-
-                {/* TDS input */}
-                <div className="space-y-1.5">
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">TDS Ded. (₹)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={tdsDeducted}
-                    onChange={(e) => setTdsDeducted(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800 text-right"
-                  />
-                </div>
-
-                {/* General Discount */}
-                <div className="space-y-1.5">
-                  <label className="block text-[9px] text-slate-400 font-bold uppercase tracking-wider">Disc Amount (₹)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={discountAmount}
-                    onChange={(e) => setDiscountAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800 text-right"
-                  />
-                </div>
-              </div>
-
-              {/* Remarks */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-slate-400 font-bold uppercase tracking-wider">Remarks / Narration</label>
-                <textarea
-                  rows={2}
-                  placeholder="Additional matching or billing instructions..."
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl outline-none bg-slate-50 focus:bg-white text-slate-800 text-xs font-semibold"
-                />
-              </div>
-
-              <div className="flex gap-2 justify-end pt-3">
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="w-full px-5 py-3 text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-md shadow-blue-600/10 flex items-center justify-center gap-1.5 text-sm font-bold"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="w-4.5 h-4.5 animate-spin" /> Registering invoice...
-                    </>
-                  ) : (
-                    "Register & Run 3-Way Match"
-                  )}
-                </button>
-              </div>
+        <FormSection title="Invoice Line Item Allocations" icon={<Layers className="w-4 h-4" />}>
+          {!poId ? (
+            <div className="text-center py-12 text-slate-400">
+              <FileText className="w-12 h-12 text-slate-300 mx-auto mb-2" />
+              <span className="text-sm font-bold">Select a Purchase Order reference to load item lines worksheet.</span>
             </div>
-          </div>
-        </div>
-      </form>
-    </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[900px]">
+                <thead>
+                  <tr className="border-b border-erp-border bg-slate-50/50 text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                    <th className="px-3 py-2 w-1/4">Item Description</th>
+                    <th className="px-3 py-2 text-right">Ordered</th>
+                    <th className="px-3 py-2 text-right">Recd (GRN)</th>
+                    <th className="px-3 py-2 w-28 text-center">Billed Qty</th>
+                    <th className="px-3 py-2 w-32 text-center">Unit Price (₹)</th>
+                    <th className="px-3 py-2 w-28 text-center">Line Tax (₹)</th>
+                    <th className="px-3 py-2 w-28 text-center">Line Disc (₹)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {lineItems.map((line, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/30 text-xs">
+                      <td className="px-3 py-2.5">
+                        <span className="font-bold text-slate-900 block">{line.item_name}</span>
+                        <span className="text-[10px] text-slate-500 font-semibold block">{line.item_sku}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right font-medium text-slate-600">{line.quantity_ordered}</td>
+                      <td className="px-3 py-2.5 text-right font-medium text-slate-600">{line.quantity_received}</td>
+                      <td className="px-3 py-2.5">
+                        <input type="number" required min="0" value={line.quantity_billed} onChange={(e) => handleLineChange(idx, "quantity_billed", e.target.value)} className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 font-bold text-slate-900" />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input type="number" step="0.01" required value={line.unit_price} onChange={(e) => handleLineChange(idx, "unit_price", e.target.value)} className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 font-bold text-slate-900" />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input type="number" step="0.01" value={line.tax_amount} onChange={(e) => handleLineChange(idx, "tax_amount", e.target.value)} className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 font-bold text-indigo-600" />
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <input type="number" step="0.01" value={line.discount_amount} onChange={(e) => handleLineChange(idx, "discount_amount", e.target.value)} className="w-full px-2 py-1 text-center border border-slate-200 rounded outline-none focus:border-blue-500 font-bold text-rose-600" />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </FormSection>
+      </FormBody>
+    </FormLayout>
   );
 };
 

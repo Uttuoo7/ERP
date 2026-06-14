@@ -42,16 +42,20 @@ def create_delivery_challan(db: Session, dc_data: schemas.DeliveryChallanCreate,
         stock.available_stock = stock.current_stock - stock.reserved_stock
         
         # 3. Create Stock Ledger Transaction
-        tx = models.InventoryTransaction(
+        from backend.inventory_engine import log_inventory_movement
+        from decimal import Decimal
+        log_inventory_movement(
+            db=db,
             item_id=li.item_id,
             warehouse_id=dc.warehouse_id,
             transaction_type="SALES_DISPATCH",
-            quantity=-li.dispatched_qty, # Negative for dispatch
+            qty=-li.dispatched_qty, # Negative for dispatch
+            unit_cost=Decimal("0.0"),
+            reference_type="DELIVERY_CHALLAN",
             reference_id=dc.id,
-            remarks=f"Dispatched under DC {dc.dc_number}",
-            created_by_id=user_id
+            user_id=user_id,
+            remarks=f"Dispatched under DC {dc.dc_number}"
         )
-        db.add(tx)
         
         # 4. Create DC Line Item
         line = models.DeliveryChallanLineItem(

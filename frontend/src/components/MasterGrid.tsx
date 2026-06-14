@@ -4,8 +4,12 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { 
-  getMasterList, createMasterItem, updateMasterItem, deleteMasterItem, bulkImportMaster, exportMasterUrl 
+  getMasterList, createMasterItem, updateMasterItem, deleteMasterItem, bulkImportMaster, exportMaster, exportMasterTemplate 
 } from "../api";
+import { useTableDensityStore } from '../store/tableDensityStore';
+import { FilterToolbar } from './common/FilterToolbar';
+import { TableSkeleton } from './common/TableSkeleton';
+import { EmptyState } from './common/EmptyState';
 
 export interface ColumnDefinition {
   key: string;
@@ -44,6 +48,12 @@ const MasterGrid: React.FC<MasterGridProps> = ({
   
   // Bulk import states
   const [importing, setImporting] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+
+  // Global Density
+  const { density } = useTableDensityStore();
+  const cellPadding = density === 'compact' ? 'px-4 py-2 text-[13px]' : 'px-6 py-4 text-sm';
+  const headerPadding = density === 'compact' ? 'px-4 py-3' : 'px-6 py-4';
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -149,6 +159,7 @@ const MasterGrid: React.FC<MasterGridProps> = ({
       await bulkImportMaster(entity, file);
       toast.success(`Bulk import completed successfully.`);
       fetchRecords();
+      setIsImportModalOpen(false);
     } catch (err) {
       // Details are printed in toast by axios interceptor
     } finally {
@@ -157,111 +168,117 @@ const MasterGrid: React.FC<MasterGridProps> = ({
     }
   };
 
-  const handleExport = () => {
-    window.open(exportMasterUrl(entity), '_blank');
+  const handleExport = async () => {
+    try {
+      const res = await exportMaster(entity);
+      const blob = new Blob([res.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${entityLabel.toLowerCase().replace(" ", "_")}_export_${new Date().toISOString().slice(0,10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to export master data CSV.");
+    }
+  };
+
+  const handleDownloadTemplate = async () => {
+    try {
+      const res = await exportMasterTemplate(entity);
+      const blob = new Blob([res.data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${entityLabel.toLowerCase().replace(" ", "_")}_template.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error("Failed to download template.");
+    }
   };
 
   return (
     <div className="space-y-6">
       {/* Header and Bulk Operations */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
-        <div className="flex flex-1 items-center gap-3">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input 
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder={searchPlaceholder}
-              className="w-full pl-10 pr-4 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all"
-            />
-          </div>
-          
-          {/* Active status filter */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <select
-              value={isActiveFilter === null ? "" : String(isActiveFilter)}
-              onChange={(e) => {
-                const val = e.target.value;
-                setIsActiveFilter(val === "" ? null : val === "true");
-              }}
-              className="bg-transparent border-none outline-none text-slate-700 text-xs font-medium cursor-pointer"
+      <FilterToolbar
+        searchQuery={search}
+        onSearchChange={setSearch}
+        searchPlaceholder={searchPlaceholder}
+        filters={
+          <select
+            value={isActiveFilter === null ? "" : String(isActiveFilter)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setIsActiveFilter(val === "" ? null : val === "true");
+            }}
+            className="bg-transparent border-none outline-none text-slate-700 text-xs font-medium cursor-pointer"
+          >
+            <option value="">All Statuses</option>
+            <option value="true">Active Only</option>
+            <option value="false">Inactive Only</option>
+          </select>
+        }
+        actions={
+          <>
+            <button 
+              onClick={handleExport}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-erp-border rounded-erp hover:bg-slate-50 transition-all shadow-sm"
             >
-              <option value="">All Statuses</option>
-              <option value="true">Active Only</option>
-              <option value="false">Inactive Only</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleExport}
-            className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 transition-all shadow-sm"
-          >
-            <Download className="w-4 h-4" />
-            Export CSV
-          </button>
-          
-          <label className="flex items-center gap-2 px-3.5 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 hover:border-slate-300 cursor-pointer transition-all shadow-sm">
-            <Upload className="w-4 h-4" />
-            {importing ? "Importing..." : "Import CSV"}
-            <input 
-              type="file" 
-              accept=".csv" 
-              onChange={handleBulkImport} 
-              className="hidden" 
-              disabled={importing}
-            />
-          </label>
-
-          <button 
-            onClick={handleOpenCreateModal}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-all shadow-md shadow-blue-600/10"
-          >
-            <Plus className="w-4 h-4" />
-            Add {entityLabel}
-          </button>
-        </div>
-      </div>
+              <Download className="w-4 h-4" />
+              Export
+            </button>
+            <button 
+              onClick={() => setIsImportModalOpen(true)}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-erp-border rounded-erp hover:bg-slate-50 transition-all shadow-sm"
+            >
+              <Upload className="w-4 h-4" />
+              Import
+            </button>
+            <button 
+              onClick={handleOpenCreateModal}
+              className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-erp-primary hover:bg-erp-primary/90 rounded-erp transition-all shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add {entityLabel}
+            </button>
+          </>
+        }
+      />
 
       {/* Main Table Grid */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-erp border border-erp-border shadow-sm overflow-hidden">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-20 gap-3">
-            <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-            <p className="text-slate-400 text-sm">Fetching master records...</p>
-          </div>
+          <TableSkeleton columns={columns.length + 2} />
         ) : items.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-6 h-6 text-slate-400" />
-            </div>
-            <h3 className="text-lg font-semibold text-slate-900 mb-1">No master data found</h3>
-            <p className="text-slate-500 text-sm max-w-sm mx-auto">
-              We couldn't find any records matching your filters. Try adding a new record or running a bulk CSV import.
-            </p>
-          </div>
+          <EmptyState 
+            icon={<AlertTriangle className="w-8 h-8" />} 
+            title="No master data found" 
+            description="We couldn't find any records matching your filters. Try adding a new record or running a bulk CSV import." 
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/50">
+              <thead className="sticky top-0 bg-white/90 backdrop-blur-md z-10 border-b border-erp-border shadow-sm">
+                <tr className="bg-slate-50/50">
                   {columns.map(col => (
-                    <th key={col.key} className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    <th key={col.key} className={`${headerPadding} text-[10px] font-bold text-slate-400 uppercase tracking-wider`}>
                       {col.label}
                     </th>
                   ))}
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-xs font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                  <th className={`${headerPadding} text-[10px] font-bold text-slate-400 uppercase tracking-wider`}>Status</th>
+                  <th className={`${headerPadding} text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right`}>Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-erp-border">
                 {items.map(item => (
-                  <tr key={item.id} className="hover:bg-slate-50/30 transition-colors">
+                  <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
                     {columns.map(col => (
-                      <td key={col.key} className="px-6 py-4 text-sm font-medium text-slate-700">
+                      <td key={col.key} className={`${cellPadding} font-medium text-slate-700`}>
                         {col.type === 'boolean' ? (
                           item[col.key] ? (
                             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-green-50 text-green-700 border border-green-100">
@@ -279,7 +296,7 @@ const MasterGrid: React.FC<MasterGridProps> = ({
                         )}
                       </td>
                     ))}
-                    <td className="px-6 py-4">
+                    <td className={cellPadding}>
                       {item.is_active ? (
                         <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-100">
                           Active
@@ -290,7 +307,7 @@ const MasterGrid: React.FC<MasterGridProps> = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right">
+                    <td className={`${cellPadding} text-right`}>
                       <div className="inline-flex items-center gap-1.5">
                         <button 
                           onClick={() => handleOpenEditModal(item)}
@@ -421,6 +438,57 @@ const MasterGrid: React.FC<MasterGridProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Import Modal */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <h2 className="text-lg font-semibold text-slate-900">Import Data</h2>
+              <button 
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-4 flex flex-col items-start gap-2">
+                <h3 className="text-sm font-semibold text-blue-900">Need a template?</h3>
+                <p className="text-xs text-blue-700 leading-relaxed">
+                  Download our example CSV template to see the required format and fields. This ensures your data is consistent and imports correctly without errors.
+                </p>
+                <button 
+                  onClick={handleDownloadTemplate}
+                  className="mt-2 flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-blue-700 bg-white border border-blue-200 rounded-lg hover:bg-blue-50 transition-all"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  Download Example Template
+                </button>
+              </div>
+              
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-medium text-slate-700">Upload CSV File</label>
+                <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-200 border-dashed rounded-2xl cursor-pointer bg-slate-50 hover:bg-slate-100 hover:border-slate-300 transition-all group">
+                  <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                    <Upload className="w-8 h-8 text-slate-400 group-hover:text-blue-500 mb-2 transition-colors" />
+                    <p className="text-sm text-slate-500 font-medium">
+                      {importing ? "Importing..." : "Click or drag to upload"}
+                    </p>
+                  </div>
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={handleBulkImport} 
+                    className="hidden" 
+                    disabled={importing}
+                  />
+                </label>
+              </div>
+            </div>
           </div>
         </div>
       )}

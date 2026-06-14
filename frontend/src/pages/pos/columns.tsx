@@ -19,24 +19,26 @@ export interface PurchaseOrder {
   };
 }
 
+import { StatusBadge } from '../../components/common/StatusBadge';
+
 const getStatusBadge = (status: string) => {
   switch (status) {
     case "DRAFT":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">Draft</span>;
+      return <StatusBadge status="neutral" label="Draft" />;
     case "PENDING_APPROVAL":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-700 border border-amber-150 animate-pulse">Awaiting Approval</span>;
+      return <StatusBadge status="warning" label="Awaiting Approval" />;
     case "APPROVED":
     case "ISSUED":
     case "SENT":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-150">Issued / Sent</span>;
+      return <StatusBadge status="info" label="Issued / Sent" />;
     case "PARTIAL_RECEIPT":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-sky-50 text-sky-700 border border-sky-150">Partially Received</span>;
+      return <StatusBadge status="info" label="Partially Received" />;
     case "FULFILLED":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-150">Fulfilled</span>;
+      return <StatusBadge status="success" label="Fulfilled" />;
     case "CLOSED":
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-200 text-slate-600">Closed</span>;
+      return <StatusBadge status="neutral" label="Closed" />;
     default:
-      return <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-gray-150 text-gray-700">{status}</span>;
+      return <StatusBadge status="neutral" label={status} />;
   }
 };
 

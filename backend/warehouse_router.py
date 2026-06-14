@@ -13,8 +13,9 @@ def seed_warehouses(db: Session):
     if db.query(models.Warehouse).count() == 0:
         warehouses = [
             models.Warehouse(
+                warehouse_code="WH-MUM-01",
                 name="Main Mumbai Plant",
-                contact_name="Anand Verma",
+                contact_person="Anand Verma",
                 company_name="Zenith IoT Solutions",
                 address_line1="Unit 401, Alpha Tech Park",
                 address_line2="TTC Industrial Area, Mahape",
@@ -26,8 +27,9 @@ def seed_warehouses(db: Session):
                 gstin="27AAAAA0000A1Z5"
             ),
             models.Warehouse(
+                warehouse_code="WH-BLR-01",
                 name="Bangalore Storage",
-                contact_name="Rajesh Nair",
+                contact_person="Rajesh Nair",
                 company_name="Zenith IoT Solutions",
                 address_line1="No. 12, Export Promotion Industrial Park",
                 address_line2="Whitefield",

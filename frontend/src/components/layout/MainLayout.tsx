@@ -3,12 +3,17 @@ import { Sidebar } from './Sidebar';
 import { TopNav } from './TopNav';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useWebSocketStore } from '../../store/websocketStore';
-import { useAuthStore } from "../../store/authStore";
+import { useHeaderStore } from '../../store/headerStore';
+import { PageHeader } from './PageHeader';
+import { useLocation, matchPath } from 'react-router-dom';
+import { ERP_ROUTES, getRouteMetadata } from '../../routes/routes.config';
 
 export function MainLayout({ children }: { children: React.ReactNode }) {
   const { user } = useAuthStore();
   const { connect, disconnect } = useWebSocketStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const headerStore = useHeaderStore();
+  const location = useLocation();
 
   useEffect(() => {
     if (user?.id) {
@@ -19,8 +24,16 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
     };
   }, [user?.id, connect, disconnect]);
 
+  // Derive active route metadata
+  const activeRouteMeta = getRouteMetadata(location.pathname);
+
+  // Merge page-level overrides with static route metadata
+  const activeTitle = headerStore.title || activeRouteMeta?.title;
+  const activeDescription = headerStore.description !== undefined ? headerStore.description : activeRouteMeta?.description;
+  const activeBreadcrumbs = headerStore.breadcrumbs || activeRouteMeta?.breadcrumbs;
+
   return (
-    <div className="flex h-screen bg-white overflow-hidden font-sans">
+    <div className="flex h-screen bg-erp-bg overflow-hidden font-sans">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex">
         <Sidebar />
@@ -54,10 +67,30 @@ export function MainLayout({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col min-w-0 bg-slate-50/50 mb-16 md:mb-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-erp-bg mb-16 md:mb-0">
         <TopNav onMenuClick={() => setMobileMenuOpen(true)} />
-        <main className="flex-1 overflow-y-auto pb-6">
-          {children}
+        
+        {/* Global Page Header Area */}
+        {activeTitle && (
+          <div className="bg-white px-4 sm:px-6 lg:px-8 py-5 border-b border-erp-border shrink-0 z-10 shadow-sm">
+            <div className="max-w-[1600px] mx-auto w-full">
+              <PageHeader 
+                title={activeTitle} 
+                description={activeDescription}
+                breadcrumbs={activeBreadcrumbs}
+                actions={headerStore.actions}
+                secondaryActions={headerStore.secondaryActions}
+                recentItems={headerStore.recentItems}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Global Content Container */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <div className="max-w-[1600px] mx-auto w-full h-full">
+            {children}
+          </div>
         </main>
       </div>
 

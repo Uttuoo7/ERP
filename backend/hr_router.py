@@ -12,15 +12,15 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
-@router.post("/employees", response_model=schemas.EmployeeResponse)
+@router.post("/employees", response_model=schemas.HREmployeeResponse)
 def create_employee(
-    data: schemas.EmployeeCreate,
+    data: schemas.HREmployeeCreate,
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(dependencies.get_current_user)
 ):
     return hr_employee_services.create_employee(db, data)
 
-@router.get("/employees", response_model=List[schemas.EmployeeResponse])
+@router.get("/employees", response_model=List[schemas.HREmployeeResponse])
 def get_employees(
     skip: int = 0, limit: int = 100,
     db: Session = Depends(database.get_db),

@@ -38,16 +38,20 @@ def start_production(db: Session, po_id: uuid.UUID, warehouse_id: uuid.UUID, use
         stock.current_stock -= qty_needed
         stock.available_stock = stock.current_stock - stock.reserved_stock
         
-        tx = models.InventoryTransaction(
+        from backend.inventory_engine import log_inventory_movement
+        from decimal import Decimal
+        log_inventory_movement(
+            db=db,
             item_id=li.raw_material_item_id,
             warehouse_id=warehouse_id,
             transaction_type="PRODUCTION_CONSUMPTION",
-            quantity=-qty_needed,
+            qty=-qty_needed,
+            unit_cost=Decimal("0.0"),
+            reference_type="PRODUCTION_ORDER",
             reference_id=po.id,
-            remarks=f"Consumed for PO {po.production_order_number}",
-            created_by_id=user_id
+            user_id=user_id,
+            remarks=f"Consumed for PO {po.production_order_number}"
         )
-        db.add(tx)
         
     po.production_status = 'IN_PROGRESS'
     po.actual_start_date = datetime.utcnow()
@@ -82,17 +86,20 @@ def complete_production(db: Session, po_id: uuid.UUID, completed_qty: float, war
         stock.current_stock += completed_qty
         stock.available_stock += completed_qty
         
-    tx = models.InventoryTransaction(
+    from backend.inventory_engine import log_inventory_movement
+    from decimal import Decimal
+    log_inventory_movement(
+        db=db,
         item_id=bom.finished_good_item_id,
         warehouse_id=warehouse_id,
         transaction_type="FINISHED_GOODS_RECEIPT",
-        quantity=completed_qty,
-        valuation_unit_cost=bom.total_cost,
+        qty=completed_qty,
+        unit_cost=Decimal(str(bom.total_cost)),
+        reference_type="PRODUCTION_ORDER",
         reference_id=po.id,
-        remarks=f"Produced from PO {po.production_order_number}",
-        created_by_id=user_id
+        user_id=user_id,
+        remarks=f"Produced from PO {po.production_order_number}"
     )
-    db.add(tx)
     
     po.completed_qty += completed_qty
     po.pending_qty = float(po.production_qty) - float(po.completed_qty) - float(po.rejected_qty)

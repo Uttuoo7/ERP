@@ -1551,12 +1551,24 @@ class WorkOrderCreate(BaseModel):
 class MRPRecommendationResponse(BaseModel):
     id: uuid.UUID
     item_id: uuid.UUID
+    warehouse_id: Optional[uuid.UUID] = None
     required_qty: float
     available_qty: float
     shortage_qty: float
     recommended_procurement_qty: float
+    recommended_order_qty: Optional[Decimal] = None
     recommendation_type: str
+    required_date: Optional[datetime] = None
+    priority: Optional[str] = None
+    source_plan_id: Optional[uuid.UUID] = None
+    estimated_unit_cost: Optional[Decimal] = None
+    estimated_total_cost: Optional[Decimal] = None
+    purchase_requisition_id: Optional[uuid.UUID] = None
+    purchase_requisition_line_id: Optional[uuid.UUID] = None
     status: str
+    reason_code: Optional[str] = None
+    narrative: Optional[str] = None
+    source_po_id: Optional[uuid.UUID] = None
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
 
@@ -1646,21 +1658,21 @@ class BackgroundJobResponse(BaseModel):
 # INTERNAL HRMS & MAINTENANCE MODULE
 # =========================================================================
 
-class EmployeeBase(BaseModel):
-    employee_code: str
+class HREmployeeBase(BaseModel):
+    employee_code: Optional[str] = None
     first_name: str
     last_name: str
     email: Optional[str] = None
     phone: Optional[str] = None
     department_id: Optional[uuid.UUID] = None
-    designation: str
-    employment_type: str
+    designation: Optional[str] = "Employee"
+    employment_type: Optional[str] = "Full-time"
     status: str = 'ACTIVE'
 
-class EmployeeCreate(EmployeeBase):
+class HREmployeeCreate(HREmployeeBase):
     pass
 
-class EmployeeResponse(EmployeeBase):
+class HREmployeeResponse(HREmployeeBase):
     id: uuid.UUID
     created_at: datetime
     model_config = ConfigDict(from_attributes=True)
@@ -1764,6 +1776,680 @@ class SystemHealthMetricResponse(BaseModel):
     celery_queue_depth: int
     websocket_pool_count: int
     created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+
+# =========================================================================
+# INVENTORY VALUATION & COST ACCOUNTING MODULE SCHEMAS
+# =========================================================================
+
+class InventorySettingsResponse(BaseModel):
+    inventory_costing_method: str
+    allow_negative_inventory: bool
+
+class InventorySettingsUpdate(BaseModel):
+    inventory_costing_method: str
+    allow_negative_inventory: bool
+
+class InventoryValuationItem(BaseModel):
+    item_id: uuid.UUID
+    sku: str
+    name: str
+    quantity_on_hand: float
+    unit_cost: float
+    inventory_value: float
+    warehouse_name: Optional[str] = None
+    category_name: Optional[str] = None
+
+class InventoryValuationResponse(BaseModel):
+    items: List[InventoryValuationItem]
+    warehouse_totals: dict
+    category_totals: dict
+    company_total_value: float
+
+
+class InventoryRevaluationCreate(BaseModel):
+    item_id: uuid.UUID
+    new_cost: Decimal = Field(decimal_places=4)
+    reason: str
+
+class InventoryRevaluationResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    old_cost: Decimal
+    new_cost: Decimal
+    quantity_affected: Decimal
+    value_difference: Decimal
+    reason: str
+    status: str
+    approved_by: Optional[uuid.UUID] = None
+    approved_at: Optional[datetime] = None
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class InventorySnapshotCreate(BaseModel):
+    snapshot_date: datetime
+    warehouse_id: Optional[uuid.UUID] = None
+
+class InventorySnapshotResponse(BaseModel):
+    id: uuid.UUID
+    snapshot_date: datetime
+    warehouse_id: Optional[uuid.UUID] = None
+    inventory_value: Decimal
+    inventory_quantity: Decimal
+    item_count: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class InventorySnapshotItemDetail(BaseModel):
+    item_id: str
+    sku: str
+    name: str
+    category: str
+    quantity_on_hand: float
+    unit_cost: float
+    inventory_value: float
+
+class InventorySnapshotDetailsResponse(BaseModel):
+    snapshot: InventorySnapshotResponse
+    details: List[InventorySnapshotItemDetail]
+
+class InventoryAnalyticsResponse(BaseModel):
+    turnover_ratio: float
+    turnover_days: float
+    slow_moving: List[dict]
+    dead_stock: List[dict]
+    obsolete_stock: List[dict]
+    exposure: List[dict]
+    trends: List[dict]
+
+
+class InventoryAdjustmentCreate(BaseModel):
+    item_id: uuid.UUID
+    warehouse_id: Optional[uuid.UUID] = None
+    qty_change: Decimal = Field(decimal_places=4)
+    unit_cost: Decimal = Field(decimal_places=4)
+    reason_code: Optional[str] = None
+    remarks: Optional[str] = None
+
+class InventoryAdjustmentResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    warehouse_id: Optional[uuid.UUID] = None
+    qty_change: Decimal
+    unit_cost: Decimal
+    status: str
+    reason_code: Optional[str] = None
+    remarks: Optional[str] = None
+    created_by_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    approved_by: Optional[uuid.UUID] = None
+    approved_at: Optional[datetime] = None
+    tenant_id: Optional[uuid.UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class InventoryTransferLineCreate(BaseModel):
+    item_id: uuid.UUID
+    qty_requested: int
+
+class InventoryTransferCreate(BaseModel):
+    source_warehouse_id: uuid.UUID
+    destination_warehouse_id: uuid.UUID
+    remarks: Optional[str] = None
+    line_items: List[InventoryTransferLineCreate]
+
+class InventoryTransferLineResponse(BaseModel):
+    id: uuid.UUID
+    transfer_id: uuid.UUID
+    item_id: uuid.UUID
+    qty_requested: int
+    qty_transferred: int
+    qty_received: int
+    unit_cost: Decimal
+    tenant_id: Optional[uuid.UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class InventoryTransferResponse(BaseModel):
+    id: uuid.UUID
+    transfer_number: str
+    source_warehouse_id: uuid.UUID
+    destination_warehouse_id: uuid.UUID
+    status: str
+    remarks: Optional[str] = None
+    created_by_id: uuid.UUID
+    created_at: datetime
+    approved_by_id: Optional[uuid.UUID] = None
+    approved_at: Optional[datetime] = None
+    tenant_id: Optional[uuid.UUID] = None
+    lines: List[InventoryTransferLineResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class CycleCountCreate(BaseModel):
+    warehouse_id: uuid.UUID
+    count_date: datetime
+    remarks: Optional[str] = None
+
+class CycleCountLineEntry(BaseModel):
+    id: uuid.UUID
+    physical_qty: int
+
+class CycleCountLineResponse(BaseModel):
+    id: uuid.UUID
+    cycle_count_id: uuid.UUID
+    item_id: uuid.UUID
+    system_qty: int
+    physical_qty: Optional[int] = None
+    variance_qty: Optional[int] = None
+    unit_cost: Decimal
+    tenant_id: Optional[uuid.UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class CycleCountResponse(BaseModel):
+    id: uuid.UUID
+    count_number: str
+    warehouse_id: uuid.UUID
+    status: str
+    count_date: datetime
+    remarks: Optional[str] = None
+    created_by_id: uuid.UUID
+    created_at: datetime
+    counted_by_id: Optional[uuid.UUID] = None
+    verified_by_id: Optional[uuid.UUID] = None
+    approved_by_id: Optional[uuid.UUID] = None
+    approved_at: Optional[datetime] = None
+    tenant_id: Optional[uuid.UUID] = None
+    lines: List[CycleCountLineResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class MovementLedgerItem(BaseModel):
+    id: str
+    item_id: str
+    sku: str
+    item_name: str
+    warehouse_id: str
+    warehouse_name: str
+    transaction_type: str
+    quantity_change: float
+    unit_cost: float
+    total_value: float
+    running_quantity_balance: float
+    running_valuation_balance: float
+    reference_type: Optional[str] = None
+    reference_id: Optional[str] = None
+    created_at: datetime
+
+class MovementLedgerResponse(BaseModel):
+    total_count: int
+    items: List[MovementLedgerItem]
+
+
+class InventoryIssueLineCreate(BaseModel):
+    item_id: uuid.UUID
+    quantity: Decimal = Field(decimal_places=4)
+
+class InventoryIssueCreate(BaseModel):
+    warehouse_id: uuid.UUID
+    department_id: Optional[uuid.UUID] = None
+    issue_date: datetime
+    issue_type: str = "ISSUE" # ISSUE, RETURN, INTERNAL, SCRAP
+    remarks: Optional[str] = None
+    line_items: List[InventoryIssueLineCreate]
+
+class InventoryIssueLineResponse(BaseModel):
+    id: uuid.UUID
+    issue_id: uuid.UUID
+    item_id: uuid.UUID
+    quantity: Decimal
+    unit_cost: Decimal
+    total_cost: Decimal
+    costing_method_used: str
+    issue_cost_basis: str
+    cost_layer_reference: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class InventoryIssueResponse(BaseModel):
+    id: uuid.UUID
+    issue_number: str
+    warehouse_id: uuid.UUID
+    department_id: Optional[uuid.UUID] = None
+    issue_date: datetime
+    status: str
+    issue_type: str
+    remarks: Optional[str] = None
+    approved_by_id: Optional[uuid.UUID] = None
+    approved_at: Optional[datetime] = None
+    tenant_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    lines: List[InventoryIssueLineResponse] = []
+    model_config = ConfigDict(from_attributes=True)# =========================================================================
+# MRP & PLANNING MODULE SCHEMAS
+# =========================================================================
+
+class DemandForecastBase(BaseModel):
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    forecast_date: datetime
+    forecast_qty: Decimal
+    forecast_method: str  # MOVING_AVERAGE, WEIGHTED_MOVING_AVERAGE, MANUAL
+    forecast_version: str = 'V1'
+    is_active: bool = True
+
+class DemandForecastCreate(DemandForecastBase):
+    pass
+
+class DemandForecastResponse(DemandForecastBase):
+    id: uuid.UUID
+    created_at: datetime
+    tenant_id: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+class DemandForecastGenerateRequest(BaseModel):
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    forecast_date: datetime
+    months_lookback: int = 3
+    method: str = "MOVING_AVERAGE"
+
+class SafetyStockPolicyBase(BaseModel):
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    safety_stock_qty: Decimal
+    reorder_point_qty: Decimal
+    reorder_qty: Decimal
+    lead_time_days: int
+
+class SafetyStockPolicyCreate(SafetyStockPolicyBase):
+    pass
+
+class SafetyStockPolicyResponse(SafetyStockPolicyBase):
+    id: uuid.UUID
+    created_at: datetime
+    tenant_id: uuid.UUID
+    model_config = ConfigDict(from_attributes=True)
+
+class MRPSnapshotResponse(BaseModel):
+    id: uuid.UUID
+    source_plan_id: uuid.UUID
+    item_id: uuid.UUID
+    warehouse_id: uuid.UUID
+    on_hand_qty: Decimal
+    in_transit_qty: Decimal
+    open_po_qty: Decimal
+    reserved_qty: Decimal
+    forecast_qty: Decimal
+    net_available_qty: Decimal
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class MRPPlanResponse(BaseModel):
+    id: uuid.UUID
+    plan_number: str
+    warehouse_id: Optional[uuid.UUID] = None
+    planning_horizon_days: int
+    status: str
+    items_analyzed: int
+    recommendations_generated: int
+    total_recommended_value: Decimal
+    run_duration_ms: int
+    generated_at: datetime
+    generated_by_id: uuid.UUID
+    tenant_id: uuid.UUID
+    recommendations: List[MRPRecommendationResponse] = []
+    snapshots: List[MRPSnapshotResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class MRPRunRequest(BaseModel):
+    warehouse_id: Optional[uuid.UUID] = None
+    planning_horizon_days: int = 30
+
+
+# =========================================================================
+# PHASE 14 ENTERPRISE MANUFACTURING SCHEMAS
+# =========================================================================
+
+class BillOfMaterialLineCreate(BaseModel):
+    component_item_id: uuid.UUID
+    quantity: Decimal
+    scrap_factor: Decimal = Decimal('0.0000')
+    uom: str
+
+class BillOfMaterialCreate(BaseModel):
+    item_id: uuid.UUID
+    revision: str = 'V1.0'
+    line_items: List[BillOfMaterialLineCreate]
+
+class BillOfMaterialLineResponse(BaseModel):
+    id: uuid.UUID
+    bom_id: uuid.UUID
+    component_item_id: uuid.UUID
+    quantity: Decimal
+    scrap_factor: Decimal
+    uom: str
+    model_config = ConfigDict(from_attributes=True)
+
+class BillOfMaterialResponse(BaseModel):
+    id: uuid.UUID
+    bom_number: str
+    item_id: uuid.UUID
+    revision: str
+    status: str
+    effective_from: datetime
+    effective_to: Optional[datetime] = None
+    line_items: List[BillOfMaterialLineResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkCenterCreate(BaseModel):
+    code: str
+    name: str
+    capacity_per_day: Decimal = Decimal('8.0000')
+    cost_per_hour: Decimal = Decimal('0.0000')
+    available_hours_per_day: Decimal = Decimal('8.0000')
+    efficiency_percent: Decimal = Decimal('100.00')
+    utilization_percent: Decimal = Decimal('100.00')
+
+class WorkCenterCalendarCreate(BaseModel):
+    event_date: datetime
+    event_type: str # HOLIDAY, MAINTENANCE, DOWNTIME
+    hours_blocked: Decimal
+    description: Optional[str] = None
+
+class WorkCenterCalendarResponse(BaseModel):
+    id: uuid.UUID
+    work_center_id: uuid.UUID
+    event_date: datetime
+    event_type: str
+    hours_blocked: Decimal
+    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkCenterResponse(BaseModel):
+    id: uuid.UUID
+    code: str
+    name: str
+    capacity_per_day: Decimal
+    cost_per_hour: Decimal
+    available_hours_per_day: Decimal
+    efficiency_percent: Decimal
+    utilization_percent: Decimal
+    status: str
+    calendar_events: List[WorkCenterCalendarResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoutingOperationCreate(BaseModel):
+    sequence_no: int
+    work_center_id: uuid.UUID
+    operation_name: str
+    setup_time_minutes: int = 0
+    run_time_minutes: int = 0
+
+class RoutingCreate(BaseModel):
+    item_id: uuid.UUID
+    revision: str = 'V1.0'
+    operations: List[RoutingOperationCreate]
+
+class RoutingOperationResponse(BaseModel):
+    id: uuid.UUID
+    routing_id: uuid.UUID
+    sequence_no: int
+    work_center_id: uuid.UUID
+    operation_name: str
+    setup_time_minutes: int
+    run_time_minutes: int
+    model_config = ConfigDict(from_attributes=True)
+
+class RoutingResponse(BaseModel):
+    id: uuid.UUID
+    item_id: uuid.UUID
+    revision: str
+    status: str
+    operations: List[RoutingOperationResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WorkOrderNewCreate(BaseModel):
+    item_id: uuid.UUID
+    quantity: Decimal
+    planned_start_date: datetime
+    planned_end_date: datetime
+    mrp_plan_id: Optional[uuid.UUID] = None
+
+class WorkOrderMaterialResponse(BaseModel):
+    id: uuid.UUID
+    work_order_id: uuid.UUID
+    component_item_id: uuid.UUID
+    quantity_required: Decimal
+    quantity_issued: Decimal
+    scrap_factor: Decimal
+    uom: str
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkOrderOperationResponse(BaseModel):
+    id: uuid.UUID
+    work_order_id: uuid.UUID
+    sequence_no: int
+    work_center_id: uuid.UUID
+    operation_name: str
+    setup_time_minutes: int
+    run_time_minutes: int
+    actual_setup_time_minutes: int
+    actual_run_time_minutes: int
+    status: str
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkOrderResponse(BaseModel):
+    id: uuid.UUID
+    wo_number: str
+    item_id: uuid.UUID
+    quantity: Decimal
+    planned_start_date: datetime
+    planned_end_date: datetime
+    actual_start_date: Optional[datetime] = None
+    actual_end_date: Optional[datetime] = None
+    status: str
+    mrp_plan_id: Optional[uuid.UUID] = None
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ManufacturingBatchMaterialCreate(BaseModel):
+    component_item_id: uuid.UUID
+    source_batch_number: str
+    quantity_consumed: Decimal
+
+class ManufacturingBatchCreate(BaseModel):
+    finished_good_batch_number: str
+    item_id: uuid.UUID
+    work_order_id: uuid.UUID
+    produced_qty: Decimal
+    scrap_qty: Decimal = Decimal('0.0000')
+    materials: List[ManufacturingBatchMaterialCreate]
+
+class ManufacturingBatchMaterialResponse(BaseModel):
+    id: uuid.UUID
+    batch_id: uuid.UUID
+    component_item_id: uuid.UUID
+    source_batch_number: str
+    quantity_consumed: Decimal
+    model_config = ConfigDict(from_attributes=True)
+
+class ManufacturingBatchResponse(BaseModel):
+    id: uuid.UUID
+    finished_good_batch_number: str
+    item_id: uuid.UUID
+    work_order_id: uuid.UUID
+    produced_qty: Decimal
+    scrap_qty: Decimal
+    yield_percent: Decimal
+    materials: List[ManufacturingBatchMaterialResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+class QualityInspectionResultCreate(BaseModel):
+    parameter_name: str
+    expected_value: str
+    actual_value: str
+    status: str # PASS, FAIL
+
+class QualityInspectionCreate(BaseModel):
+    inspection_number: str
+    work_order_id: uuid.UUID
+    item_id: uuid.UUID
+    batch_id: uuid.UUID
+    inspected_qty: float
+    accepted_qty: float
+    rejected_qty: float
+    rejection_reason: Optional[str] = None
+    remarks: Optional[str] = None
+    status: str = 'PENDING'
+    disposition: Optional[str] = None
+    results: List[QualityInspectionResultCreate] = []
+
+class QualityInspectionResultResponse(BaseModel):
+    id: uuid.UUID
+    inspection_id: uuid.UUID
+    parameter_name: str
+    expected_value: str
+    actual_value: str
+    status: str
+    model_config = ConfigDict(from_attributes=True)
+
+class QualityInspectionResponse(BaseModel):
+    id: uuid.UUID
+    inspection_number: str
+    work_order_id: Optional[uuid.UUID] = None
+    item_id: Optional[uuid.UUID] = None
+    batch_id: Optional[uuid.UUID] = None
+    inspected_qty: float
+    accepted_qty: float
+    rejected_qty: float
+    rejection_reason: Optional[str] = None
+    inspector_id: Optional[uuid.UUID] = None
+    inspection_status: str
+    disposition: Optional[str] = None
+    remarks: Optional[str] = None
+    inspection_date: Optional[datetime] = None
+    results: List[QualityInspectionResultResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Phase 15 APS Schemas
+from decimal import Decimal
+
+class WorkCenterAlternateBase(BaseModel):
+    primary_work_center_id: uuid.UUID
+    alternate_work_center_id: uuid.UUID
+    priority: int = 1
+
+class WorkCenterAlternateCreate(WorkCenterAlternateBase):
+    pass
+
+class WorkCenterAlternateResponse(WorkCenterAlternateBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CapacityPlanBase(BaseModel):
+    plan_number: str
+    planning_start_date: datetime
+    planning_end_date: datetime
+    planning_horizon_days: int
+    scheduling_mode: str # FORWARD, BACKWARD, HYBRID
+    schedule_freeze_date: Optional[datetime] = None
+    status: str = 'DRAFT'
+
+class CapacityPlanCreate(CapacityPlanBase):
+    pass
+
+class CapacityPlanResponse(CapacityPlanBase):
+    id: uuid.UUID
+    generated_at: datetime
+    generated_by_id: Optional[uuid.UUID] = None
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PlanningScenarioBase(BaseModel):
+    name: str
+    capacity_plan_id: uuid.UUID
+    scenario_type: str # BASE_PLAN, OVERTIME, EXTRA_SHIFT, MACHINE_BREAKDOWN, CAPACITY_EXPANSION
+
+class PlanningScenarioCreate(PlanningScenarioBase):
+    pass
+
+class PlanningScenarioResponse(PlanningScenarioBase):
+    id: uuid.UUID
+    created_by_id: Optional[uuid.UUID] = None
+    created_at: datetime
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CapacityRequirementBase(BaseModel):
+    capacity_plan_id: uuid.UUID
+    work_order_id: uuid.UUID
+    work_center_id: uuid.UUID
+    operation_id: uuid.UUID
+    required_hours: Decimal
+    scheduled_hours: Decimal = Decimal('0.0000')
+    remaining_hours: Decimal = Decimal('0.0000')
+    available_hours: Decimal
+    utilization_percent: Decimal = Decimal('0.00')
+    overload_hours: Decimal = Decimal('0.0000')
+
+class CapacityRequirementCreate(CapacityRequirementBase):
+    pass
+
+class CapacityRequirementResponse(CapacityRequirementBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CapacityCalendarBase(BaseModel):
+    capacity_plan_id: uuid.UUID
+    work_center_id: uuid.UUID
+    date: datetime
+    available_hours: Decimal
+    overtime_hours: Decimal = Decimal('0.0000')
+    planned_hours: Decimal = Decimal('0.0000')
+    blocked_hours: Decimal = Decimal('0.0000')
+    efficiency_factor: Decimal = Decimal('1.00')
+
+class CapacityCalendarCreate(CapacityCalendarBase):
+    pass
+
+class CapacityCalendarResponse(CapacityCalendarBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CapacityExceptionBase(BaseModel):
+    capacity_plan_id: uuid.UUID
+    work_center_id: uuid.UUID
+    exception_type: str
+    exception_date: datetime
+    severity: str
+    message: str
+    impact_hours: Decimal = Decimal('0.0000')
+    late_days: int = 0
+    resolved: bool = False
+    resolved_at: Optional[datetime] = None
+
+class CapacityExceptionCreate(CapacityExceptionBase):
+    pass
+
+class CapacityExceptionResponse(CapacityExceptionBase):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    is_deleted: bool
     model_config = ConfigDict(from_attributes=True)
 
 

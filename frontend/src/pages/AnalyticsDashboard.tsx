@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuthStore } from "../store/authStore";
+import { useHeaderStore } from "../store/headerStore";
 import { ExecutiveDashboard } from './dashboards/ExecutiveDashboard';
 import { ProcurementDashboard } from './dashboards/ProcurementDashboard';
 import { FinanceDashboard } from './dashboards/FinanceDashboard';
@@ -7,18 +8,25 @@ import { Building, TrendingUp, Landmark } from 'lucide-react';
 
 const AnalyticsDashboard: React.FC = () => {
   const role = useAuthStore(state => state.user?.role);
+  const setHeader = useHeaderStore(state => state.setHeader);
   
   const isSuper = role === 'SUPER_ADMIN' || role === 'ADMIN';
   const isProcurement = role === 'PROCUREMENT_MANAGER' || isSuper;
-  const isFinance = role === 'FINANCE_MANAGER' || isSuper;
 
-  // Default tab logic based on role
   const [activeTab, setActiveTab] = useState<'executive' | 'procurement' | 'finance'>(
     isSuper ? 'executive' : isProcurement ? 'procurement' : 'finance'
   );
 
+  useEffect(() => {
+    setHeader({
+      title: "Analytics Hub",
+      description: "Comprehensive oversight of enterprise spend, procurement efficiency, and finance metrics.",
+      breadcrumbs: [{ label: "Dashboards" }, { label: "Analytics Hub" }]
+    });
+  }, [setHeader]);
+
   return (
-    <div className="flex flex-col h-full bg-slate-50/50">
+    <div className="flex flex-col gap-6">
       {/* Role-based Tab Switcher (only show if user has access to multiple) */}
       {isSuper && (
         <div className="px-8 pt-6 border-b border-slate-200">

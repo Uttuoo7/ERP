@@ -13,8 +13,8 @@ const SystemHealthDashboard: React.FC = () => {
   useEffect(() => {
     const fetchHealth = async () => {
       try {
-        const data = await get('/observability/alerts');
-        setAlerts(data);
+        const res = await get('/observability/alerts');
+        setAlerts(res.data);
       } catch (error) {
         notification.error({ message: 'Failed to fetch system health alerts' });
       } finally {

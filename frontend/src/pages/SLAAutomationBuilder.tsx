@@ -25,8 +25,8 @@ const SLAAutomationBuilder: React.FC = () => {
   const fetchPolicies = async () => {
     setLoading(true);
     try {
-      const data = await get('/sla/policies');
-      setPolicies(data);
+      const res = await get('/sla/policies');
+      setPolicies(res.data);
     } catch (error) {
       notification.error({ message: 'Failed to fetch SLA Policies' });
     } finally {
@@ -91,23 +91,31 @@ const SLAAutomationBuilder: React.FC = () => {
             <Input placeholder="Rule Name (e.g. 48hr PR Approval)" />
           </Form.Item>
           <Form.Item name="entity_type" rules={[{ required: true, message: 'Required' }]}>
-            <Select placeholder="Select Workflow Trigger" style={{ width: 220 }}>
-              <Option value="PURCHASE_REQUISITION">PR Approval</Option>
-              <Option value="PURCHASE_ORDER">PO Issuance</Option>
-              <Option value="GRN_PENDING">GRN Pending</Option>
-              <Option value="INVOICE_MATCHING">Invoice Matching</Option>
-            </Select>
+            <Select 
+              placeholder="Select Workflow Trigger" 
+              style={{ width: 220 }}
+              options={[
+                { value: "PURCHASE_REQUISITION", label: "PR Approval" },
+                { value: "PURCHASE_ORDER", label: "PO Issuance" },
+                { value: "GRN_PENDING", label: "GRN Pending" },
+                { value: "INVOICE_MATCHING", label: "Invoice Matching" }
+              ]}
+            />
           </Form.Item>
           <Form.Item name="max_hours" rules={[{ required: true, message: 'Required' }]}>
             <InputNumber placeholder="Max Hours" min={1} style={{ width: 120 }} addonAfter="hrs" />
           </Form.Item>
           <Form.Item name="escalation_level" rules={[{ required: true, message: 'Required' }]}>
-            <Select placeholder="Escalate To" style={{ width: 150 }}>
-              <Option value="MANAGER">Manager</Option>
-              <Option value="DIRECTOR">Director</Option>
-              <Option value="PROCUREMENT_HEAD">Procurement Head</Option>
-              <Option value="SYSTEM_AUTO_REJECT">Auto Reject</Option>
-            </Select>
+            <Select 
+              placeholder="Escalate To" 
+              style={{ width: 150 }}
+              options={[
+                { value: "MANAGER", label: "Manager" },
+                { value: "DIRECTOR", label: "Director" },
+                { value: "PROCUREMENT_HEAD", label: "Procurement Head" },
+                { value: "SYSTEM_AUTO_REJECT", label: "Auto Reject" }
+              ]}
+            />
           </Form.Item>
           <Form.Item>
             <Button type="primary" htmlType="submit" icon={<SaveOutlined />}>Create Rule</Button>

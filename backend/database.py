@@ -5,6 +5,19 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from dotenv import load_dotenv
 
+from decimal import Decimal
+import sqlite3
+import uuid
+sqlite3.register_adapter(uuid.UUID, lambda u: str(u))
+sqlite3.register_adapter(Decimal, lambda d: float(d))
+
+from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.types import UUID
+
+@compiles(UUID, "sqlite")
+def compile_uuid_sqlite(type_, compiler, **kw):
+    return "CHAR(36)"
+
 logger = logging.getLogger(__name__)
 
 from .config.settings import settings
@@ -105,7 +118,10 @@ def opt_in_tenant_filtering(orm_execute_state):
             orm_execute_state.statement = orm_execute_state.statement.options(
                 with_loader_criteria(
                     Base,
-                    lambda cls: (cls.tenant_id == tenant_id) & (cls.is_deleted == False),
+                    lambda cls: (
+                        ((cls.tenant_id == tenant_id) if hasattr(cls, "tenant_id") else True) &
+                        ((cls.is_deleted == False) if hasattr(cls, "is_deleted") else True)
+                    ),
                     include_aliases=True,
                     propagate_to_loaders=True
                 )
@@ -115,7 +131,7 @@ def opt_in_tenant_filtering(orm_execute_state):
             orm_execute_state.statement = orm_execute_state.statement.options(
                 with_loader_criteria(
                     Base,
-                    lambda cls: cls.is_deleted == False,
+                    lambda cls: (cls.is_deleted == False) if hasattr(cls, "is_deleted") else True,
                     include_aliases=True,
                     propagate_to_loaders=True
                 )
