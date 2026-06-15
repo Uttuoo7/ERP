@@ -20,4 +20,4 @@ aioredis
 httpx
 gunicorn
 psutil
-
+pandas
