@@ -1,0 +1,24 @@
+# Koyeb Deployment Configuration
+name: p2p-erp-backend
+services:
+  - name: backend
+    type: web
+    dockerfile: Dockerfile.backend
+    ports:
+      - port: 8000
+        protocol: http
+    routes:
+      - path: /
+        port: 8000
+    regions:
+      - fra
+    instance_type: nano
+    env:
+      - key: PORT
+        value: "8000"
+      - key: DATABASE_URL
+        value: "sqlite:///./erp_v8.db"
+      - key: SECRET_KEY
+        value: "super_secret_p2p_erp_key_for_jwt_tokens"
+      - key: REDIS_ENABLED
+        value: "false"

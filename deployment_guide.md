@@ -98,3 +98,31 @@ Create a migration revision whenever you edit `models.py`:
 alembic revision --autogenerate -m "description_of_change"
 alembic upgrade head
 ```
+
+---
+
+## 5. Option C: Free Cloud Deployment via Koyeb & Vercel (Recommended for Online Hosting)
+
+You can host the application online for free without cold-start/sleep delays by deploying the backend to **Koyeb** and the frontend to **Vercel**.
+
+### Step 1: Deploy Backend to Koyeb
+1. Sign up for a free account at [Koyeb.com](https://www.koyeb.com).
+2. Go to the Control Panel and click **Create Service**.
+3. Choose **GitHub** as the source, select your repository, and select the `main` branch.
+4. Koyeb will detect the [koyeb.yaml](file:///C:/Users/ASUS/.gemini/antigravity/scratch/P2P_ERP/koyeb.yaml) configuration file automatically.
+5. In the **Environment Variables** section, customize the values:
+   - `DATABASE_URL`: By default, the app runs on a local SQLite file. For persistent data, you can create a free PostgreSQL database on Koyeb and paste the connection string here.
+   - `SECRET_KEY`: Set this to a secure random string.
+6. Click **Deploy**. Once the build finishes, Koyeb will give you a public URL (e.g. `https://xxx.koyeb.app`).
+
+### Step 2: Deploy Frontend to Vercel
+1. Sign up for a free account at [Vercel.com](https://vercel.com).
+2. Click **Add New** -> **Project** and select your GitHub repository.
+3. In the project settings, set:
+   - **Framework Preset**: `Vite`
+   - **Root Directory**: `frontend`
+4. Expand **Environment Variables** and add:
+   - `VITE_API_URL`: Paste your Koyeb backend URL here (e.g. `https://xxx.koyeb.app`).
+   - `VITE_WS_URL`: Paste the WebSocket equivalent of your backend URL (change `https://` to `wss://`, e.g. `wss://xxx.koyeb.app/api/ws`).
+5. Click **Deploy**. Vercel will build the frontend, and your ERP will be live online!
+
