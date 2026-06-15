@@ -164,6 +164,7 @@ function App() {
               <Route path="/items" element={<ProtectedRoute><MainLayout><ItemCatalog /></MainLayout></ProtectedRoute>} />
               
               <Route path="/pos" element={<ProtectedRoute><MainLayout><POList /></MainLayout></ProtectedRoute>} />
+              <Route path="/pos/new" element={<ProtectedRoute><MainLayout><PurchaseOrderForm /></MainLayout></ProtectedRoute>} />
               <Route path="/pos/convert" element={<ProtectedRoute><MainLayout><POConverter /></MainLayout></ProtectedRoute>} />
               <Route path="/pos/:id" element={<ProtectedRoute><MainLayout><PODetails /></MainLayout></ProtectedRoute>} />
               <Route path="/pos/:id/edit" element={<ProtectedRoute><MainLayout><PurchaseOrderEdit /></MainLayout></ProtectedRoute>} />
@@ -172,6 +173,7 @@ function App() {
               <Route path="/grns/convert" element={<ProtectedRoute><MainLayout><POToGRNConverter /></MainLayout></ProtectedRoute>} />
               <Route path="/grns/:id" element={<ProtectedRoute><MainLayout><GRNDetails /></MainLayout></ProtectedRoute>} />
               <Route path="/grns/:id/qc" element={<ProtectedRoute><MainLayout><QCConsole /></MainLayout></ProtectedRoute>} />
+              <Route path="/receive-goods" element={<ProtectedRoute><MainLayout><ReceiveGoods /></MainLayout></ProtectedRoute>} />
               
               <Route path="/invoices" element={<ProtectedRoute><MainLayout><InvoiceDashboard /></MainLayout></ProtectedRoute>} />
               <Route path="/invoices/new" element={<ProtectedRoute><MainLayout><InvoiceEntryWorkspace /></MainLayout></ProtectedRoute>} />

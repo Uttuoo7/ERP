@@ -111,10 +111,10 @@ export default function ProcurementCommandCenter() {
 
       {/* Quick Actions Bar */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <ActionTile title="New Requisition" subtitle="Create internal PR" icon={Plus} onClick={() => navigate('/prs/new')} color="indigo" />
+        <ActionTile title="New Requisition" subtitle="Create internal PR" icon={Plus} onClick={() => navigate('/requisitions/new')} color="indigo" />
         <ActionTile title="New Purchase Order" subtitle="Direct PO creation" icon={Plus} onClick={() => navigate('/pos/new')} color="blue" />
         <ActionTile title="Receive Goods" subtitle="Warehouse GRN" icon={ArrowRightLeft} onClick={() => navigate('/receive-goods')} color="emerald" />
-        <ActionTile title="Process Invoice" subtitle="Accounts Payable" icon={FileText} onClick={() => navigate('/invoice-entry')} color="amber" />
+        <ActionTile title="Process Invoice" subtitle="Accounts Payable" icon={FileText} onClick={() => navigate('/invoices/new')} color="amber" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
