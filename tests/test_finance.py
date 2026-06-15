@@ -255,3 +255,46 @@ class TestTaxCalculation:
             gst_amount=Decimal("0.00")
         )
         assert invoice.gst_amount == Decimal("0.00")
+
+
+class TestVendorLiabilitiesAPI:
+    """Tests the /api/finance/liabilities endpoint."""
+
+    def test_get_vendor_liabilities_endpoint(self, client, db_session, vendor, warehouse, finance_user, finance_headers):
+        po = POFactory.create(
+            db_session, vendor=vendor, warehouse=warehouse, created_by=finance_user,
+            total_amount=Decimal("50000.00"), status=models.POStatus.ISSUED
+        )
+        grn = GRNFactory.create(
+            db_session, po=po, warehouse=warehouse, received_by=finance_user
+        )
+        invoice = InvoiceFactory.create(
+            db_session, vendor=vendor, po=po, grn=grn, created_by=finance_user,
+            total_amount=Decimal("50000.00"),
+            status=models.InvoiceStatus.MATCHED
+        )
+        
+        # Create a VendorLiability record
+        liability = models.VendorLiability(
+            id=uuid.uuid4(),
+            vendor_id=vendor.id,
+            invoice_id=invoice.id,
+            original_amount=Decimal("50000.00"),
+            outstanding_amount=Decimal("50000.00"),
+            due_date=datetime.utcnow() + timedelta(days=30),
+            status="UNPAID",
+            created_at=datetime.utcnow()
+        )
+        db_session.add(liability)
+        db_session.commit()
+        
+        response = client.get("/api/finance/liabilities", headers=finance_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) >= 1
+        matched_item = [item for item in data if item["id"] == str(liability.id)]
+        assert len(matched_item) == 1
+        assert matched_item[0]["invoice"] is not None
+        assert matched_item[0]["invoice"]["invoice_number"] == invoice.invoice_number
+        assert "line_items" in matched_item[0]["invoice"]
+

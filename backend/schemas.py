@@ -1120,7 +1120,7 @@ class VendorLiabilityResponse(BaseModel):
     last_payment_date: Optional[datetime] = None
     
     vendor: Optional[VendorResponse] = None
-    invoice: Optional[InvoiceLineItemResponse] = None # can use a general dict/any or custom invoice summary response
+    invoice: Optional[InvoiceResponse] = None # can use a general dict/any or custom invoice summary response
     model_config = ConfigDict(from_attributes=True)
 
 class PaymentAllocationResponse(BaseModel):
