@@ -11,7 +11,9 @@ from .limiter import limiter
 @router.post("/login", response_model=schemas.Token)
 @limiter.limit("5/minute")
 def login(request: Request, login_data: schemas.LoginRequest, db: Session = Depends(database.get_db)):
-    user = db.query(models.User).filter(models.User.email == login_data.email).first()
+    user = db.query(models.User).filter(
+        (models.User.email == login_data.email) | (models.User.username == login_data.email)
+    ).first()
     if not user or not auth_utils.verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

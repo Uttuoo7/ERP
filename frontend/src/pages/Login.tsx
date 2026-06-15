@@ -33,8 +33,8 @@ export default function Login() {
         {error && <div className="bg-red-100 text-red-700 p-3 rounded mb-4 text-sm">{error}</div>}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700">Email Address</label>
-            <input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full p-2 border rounded border-gray-300" />
+            <label className="block text-sm font-medium text-gray-700">Email or Username</label>
+            <input required type="text" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full p-2 border rounded border-gray-300" />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700">Password</label>
