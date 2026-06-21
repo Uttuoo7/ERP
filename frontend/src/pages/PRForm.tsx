@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useWorkspaceTabState } from '../hooks/useWorkspaceTabState';
 import { 
   Save, Plus, Trash2, ArrowLeft, Loader2, Calendar, FileText, ShoppingCart, User, Layers
 } from 'lucide-react';
@@ -48,16 +49,16 @@ const PRForm: React.FC = () => {
   const [projects, setProjects] = useState<any[]>([]);
   const [costCenters, setCostCenters] = useState<any[]>([]);
 
-  // Form states
-  const [departmentId, setDepartmentId] = useState("");
-  const [projectId, setProjectId] = useState("");
-  const [costCenterId, setCostCenterId] = useState("");
-  const [priority, setPriority] = useState("MEDIUM");
-  const [requiredDate, setRequiredDate] = useState("");
-  const [deliveryLocationId, setDeliveryLocationId] = useState("");
-  const [currency, setCurrency] = useState("INR");
-  const [remarks, setRemarks] = useState("");
-  const [lineItems, setLineItems] = useState<LineItem[]>([
+  // Form states using workspace tab storage
+  const [departmentId, setDepartmentId] = useWorkspaceTabState("pr_departmentId", "");
+  const [projectId, setProjectId] = useWorkspaceTabState("pr_projectId", "");
+  const [costCenterId, setCostCenterId] = useWorkspaceTabState("pr_costCenterId", "");
+  const [priority, setPriority] = useWorkspaceTabState("pr_priority", "MEDIUM");
+  const [requiredDate, setRequiredDate] = useWorkspaceTabState("pr_requiredDate", "");
+  const [deliveryLocationId, setDeliveryLocationId] = useWorkspaceTabState("pr_deliveryLocationId", "");
+  const [currency, setCurrency] = useWorkspaceTabState("pr_currency", "INR");
+  const [remarks, setRemarks] = useWorkspaceTabState("pr_remarks", "");
+  const [lineItems, setLineItems] = useWorkspaceTabState<LineItem[]>("pr_lineItems", [
     {
       item_id: "",
       description: "",

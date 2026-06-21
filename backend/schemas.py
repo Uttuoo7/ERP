@@ -756,8 +756,8 @@ class PurchaseRequisitionLineCreate(PurchaseRequisitionLineBase):
 class PurchaseRequisitionLineResponse(PurchaseRequisitionLineBase):
     id: uuid.UUID
     pr_id: uuid.UUID
-    item: Optional[Any] = None
-    suggested_vendor: Optional[Any] = None
+    item: Optional[ItemResponse] = None
+    suggested_vendor: Optional[VendorResponse] = None
     model_config = ConfigDict(from_attributes=True)
 
 class PurchaseRequisitionCommentCreate(BaseModel):
@@ -2451,5 +2451,133 @@ class CapacityExceptionResponse(CapacityExceptionBase):
     tenant_id: Optional[uuid.UUID] = None
     is_deleted: bool
     model_config = ConfigDict(from_attributes=True)
+
+
+# --- Platform Governance & Extension Schemas ---
+
+class RoleDefinitionResponse(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
+class FeatureFlagCreate(BaseModel):
+    feature_key: str
+    enabled: bool = False
+    rollout_percentage: int = 100
+    environment: str = "Production"
+    minimum_license: Optional[str] = None
+
+class FeatureFlagResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: Optional[uuid.UUID] = None
+    feature_key: str
+    enabled: bool
+    rollout_percentage: int
+    environment: str
+    minimum_license: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+class FeatureFlagUpdate(BaseModel):
+    enabled: Optional[bool] = None
+    rollout_percentage: Optional[int] = None
+    environment: Optional[str] = None
+    minimum_license: Optional[str] = None
+
+class PluginStateUpdate(BaseModel):
+    enabled: bool
+    license_level: Optional[str] = None
+    configuration_json: Optional[str] = None
+    installed_version: Optional[str] = None
+
+class PluginStateResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    plugin_key: str
+    enabled: bool
+    license_level: str
+    configuration_json: Optional[str] = None
+    installed_version: str
+    last_updated: datetime
+    is_certified: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkspacePermissionSchema(BaseModel):
+    workspace_id: uuid.UUID
+    role_id: uuid.UUID
+    can_view: bool = True
+    can_edit: bool = False
+    can_duplicate: bool = True
+    can_delete: bool = False
+    can_publish: bool = False
+
+class WorkspacePermissionResponse(BaseModel):
+    id: uuid.UUID
+    workspace_id: uuid.UUID
+    role_id: uuid.UUID
+    role_name: Optional[str] = None
+    can_view: bool
+    can_edit: bool
+    can_duplicate: bool
+    can_delete: bool
+    can_publish: bool
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkspaceCreate(BaseModel):
+    name: str
+    type: str  # PERSONAL, SHARED, DEPARTMENT, SYSTEM
+    department_id: Optional[uuid.UUID] = None
+    layout_json: Optional[str] = None
+    permissions: List[WorkspacePermissionSchema] = []
+
+class WorkspaceResponse(BaseModel):
+    id: uuid.UUID
+    tenant_id: uuid.UUID
+    owner_id: Optional[uuid.UUID] = None
+    name: str
+    type: str
+    department_id: Optional[uuid.UUID] = None
+    layout_json: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    permissions: List[WorkspacePermissionResponse] = []
+    model_config = ConfigDict(from_attributes=True)
+
+class WorkspaceUpdate(BaseModel):
+    name: Optional[str] = None
+    layout_json: Optional[str] = None
+    type: Optional[str] = None
+    department_id: Optional[uuid.UUID] = None
+
+class UserPreferenceResponse(BaseModel):
+    user_id: uuid.UUID
+    settings_schema_version: str
+    last_migrated: Optional[datetime] = None
+    migration_required: bool
+    preferences_json: str
+    model_config = ConfigDict(from_attributes=True)
+
+class UserPreferenceUpdate(BaseModel):
+    preferences_json: str
+
+class PreferenceImportSchema(BaseModel):
+    settings_schema_version: str
+    preferences_json: str
+
+class PreferenceAuditLogResponse(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    username: Optional[str] = None
+    timestamp: datetime
+    ip_address: Optional[str] = None
+    client_agent: Optional[str] = None
+    tenant_id: uuid.UUID
+    action: str
+    previous_value: Optional[str] = None
+    new_value: Optional[str] = None
+    model_config = ConfigDict(from_attributes=True)
+
 
 

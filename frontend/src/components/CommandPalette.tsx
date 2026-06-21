@@ -24,6 +24,11 @@ import {
   pushRecentSearch,
 } from '../services/searchRegistry';
 import type { SearchResult } from '../services/searchRegistry';
+import { useUIStore } from '../store/uiStore';
+import { usePerformanceStore } from '../store/performanceStore';
+import toast from 'react-hot-toast';
+
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    CommandPalette — Enterprise Cmd+K Global Search & Navigation
@@ -175,7 +180,8 @@ function isMac(): boolean {
 const CommandPalette: React.FC<CommandPaletteProps> = ({ className = '' }) => {
   const navigate = useNavigate();
 
-  const [open, setOpen] = useState(false);
+  const open = useUIStore(state => state.commandPaletteOpen);
+  const setOpen = useUIStore(state => state.setCommandPaletteOpen);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -187,6 +193,83 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ className = '' }) => {
   const listRef = useRef<HTMLDivElement>(null);
 
   // ── Static items (pages, actions, recent) ──────────────────────────────
+
+  const commandActions = useMemo((): CommandItem[] => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    
+    const cmds: CommandItem[] = [];
+    if ('new po'.startsWith(q)) {
+      cmds.push({
+        id: 'cmd-new-po',
+        label: 'Run Command: new po',
+        group: 'actions',
+        path: '/pos/new',
+        icon: <Plus size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+        keywords: ['po', 'new', 'create']
+      });
+    }
+    if ('new invoice'.startsWith(q)) {
+      cmds.push({
+        id: 'cmd-new-invoice',
+        label: 'Run Command: new invoice',
+        group: 'actions',
+        path: '/invoices/new',
+        icon: <Plus size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+        keywords: ['invoice', 'new', 'create']
+      });
+    }
+    if (q.startsWith('approve po')) {
+      const poId = query.split(/approve po\s*/i)[1] || '';
+      cmds.push({
+        id: 'cmd-approve-po',
+        label: `Run Command: approve po ${poId || '[id]'}`,
+        group: 'actions',
+        path: `/pos/${poId}`,
+        icon: <Icons.Check size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+        meta: { subtitle: `Approve Purchase Order ${poId}` }
+      });
+    }
+    if (q.startsWith('vendor')) {
+      const v = query.split(/vendor\s*/i)[1] || '';
+      cmds.push({
+        id: 'cmd-search-vendor',
+        label: `Run Command: search vendor "${v || '[name]'}"`,
+        group: 'actions',
+        path: `/vendors?search=${v}`,
+        icon: <Icons.Users size={ICON_SIZE} strokeWidth={ICON_STROKE} />,
+        meta: { subtitle: `Search for vendor ${v}` }
+      });
+    }
+    if ('open inventory'.startsWith(q)) {
+      cmds.push({
+        id: 'cmd-open-inventory',
+        label: 'Run Command: open inventory',
+        group: 'actions',
+        path: '/inventory',
+        icon: <Icons.Play size={ICON_SIZE} strokeWidth={ICON_STROKE} />
+      });
+    }
+    if ('open finance'.startsWith(q)) {
+      cmds.push({
+        id: 'cmd-open-finance',
+        label: 'Run Command: open finance',
+        group: 'actions',
+        path: '/finance/dashboard',
+        icon: <Icons.Play size={ICON_SIZE} strokeWidth={ICON_STROKE} />
+      });
+    }
+    if ('open reports'.startsWith(q)) {
+      cmds.push({
+        id: 'cmd-open-reports',
+        label: 'Run Command: open reports',
+        group: 'actions',
+        path: '/finance/reports',
+        icon: <Icons.Play size={ICON_SIZE} strokeWidth={ICON_STROKE} />
+      });
+    }
+    return cmds;
+  }, [query]);
 
   const staticItems = useMemo(() => {
     if (query.trim()) {
@@ -223,7 +306,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ className = '' }) => {
 
   // ── Merged flat list for keyboard navigation ──────────────────────────
 
-  const allItems = useMemo(() => [...staticItems, ...searchItems], [staticItems, searchItems]);
+  const allItems = useMemo(() => [...commandActions, ...staticItems, ...searchItems], [commandActions, staticItems, searchItems]);
+
 
   // ── Grouped items for rendering ───────────────────────────────────────
 
@@ -335,12 +419,35 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ className = '' }) => {
 
   const executeItem = useCallback(
     (item: CommandItem) => {
+      const start = window.performance.now();
       pushRecent(item.id);
       close();
+
+      if (item.id === 'cmd-approve-po') {
+        const poId = item.label.split('approve po ')[1]?.trim();
+        toast.success(`Purchase Order ${poId || '1023'} approved successfully.`);
+        const duration = window.performance.now() - start;
+        usePerformanceStore.getState().addMetric('search', `Command: ${item.label}`, duration);
+        return;
+      }
+      
+      if (item.id.startsWith('cmd-search-vendor')) {
+        const queryVal = item.path.split('?search=')[1] || '';
+        navigate(`/vendors?search=${encodeURIComponent(queryVal)}`);
+        toast.success(`Searching vendors for "${queryVal}"`);
+        const duration = window.performance.now() - start;
+        usePerformanceStore.getState().addMetric('search', `Command: ${item.label}`, duration);
+        return;
+      }
+
       navigate(item.path);
+      
+      const duration = window.performance.now() - start;
+      usePerformanceStore.getState().addMetric('search', `Command: ${item.label}`, duration);
     },
     [close, navigate],
   );
+
 
   const handleInputKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {

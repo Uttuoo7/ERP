@@ -1,4 +1,4 @@
-import { getRequisitions, getPOs, getGRNs, getInvoices } from '../api';
+import { getRequisitions, getPOs, getGRNs, getInvoices, globalSearch } from '../api';
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Enterprise Global Search Registry
@@ -185,24 +185,37 @@ export async function performGlobalSearch(
   query: string,
   signal: AbortSignal,
 ): Promise<Record<string, SearchResult[]>> {
-  const grouped: Record<string, SearchResult[]> = {};
+  try {
+    const res = await globalSearch(query);
+    const data = res.data || {};
+    const grouped: Record<string, SearchResult[]> = {};
 
-  const tasks = SEARCH_PROVIDERS
-    .filter(p => p.supportsSearch)
-    .map(async (provider) => {
-      try {
-        const results = await provider.search(query, signal);
-        if (results.length > 0) {
-          grouped[provider.group] = (grouped[provider.group] || []).concat(results);
+    Object.keys(data).forEach((key) => {
+      const items = data[key] || [];
+      items.forEach((item: any) => {
+        const group = item.group || 'Results';
+        if (!grouped[group]) {
+          grouped[group] = [];
         }
-      } catch (e: any) {
-        if (e?.name === 'CanceledError' || e?.name === 'AbortError') throw e;
-        console.warn(`[GlobalSearch] Provider "${provider.entityType}" failed:`, e);
-      }
+        grouped[group].push({
+          id: item.id,
+          title: item.title,
+          subtitle: item.subtitle,
+          status: item.status,
+          updatedAt: item.updated_at,
+          entityType: item.entity_type,
+          group: item.group,
+          route: item.route,
+        });
+      });
     });
 
-  await Promise.allSettled(tasks);
-  return grouped;
+    return grouped;
+  } catch (e: any) {
+    if (e?.name === 'CanceledError' || e?.name === 'AbortError') throw e;
+    console.warn(`[GlobalSearch] Failed:`, e);
+    return {};
+  }
 }
 
 /**

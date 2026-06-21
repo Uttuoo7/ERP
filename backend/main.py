@@ -27,18 +27,37 @@ from .document_router import router as document_router
 from . import database
 
 os.makedirs('uploads', exist_ok=True)
-# Note: Database creation and migration is now handled by Alembic.
-# Run 'alembic upgrade head' before starting the application.
-logger.info("Application starting. Ensure Alembic migrations are up to date.")
 
-# Seed users and warehouses (skip during testing — tests manage their own DB)
-if not os.getenv("TESTING"):
-    try:
-        with database.SessionLocal() as db:
+# Auto-create tables for SQLite ease (especially in testing/dev)
+try:
+    Base.metadata.create_all(bind=engine)
+    logger.info("Database schemas initialized successfully.")
+except Exception as e:
+    logger.warning(f"Database schemas initialization failed: {e}")
+
+def seed_roles(db):
+    from .models import Role, RoleDefinition
+    import uuid
+    for role_enum in Role:
+        existing = db.query(RoleDefinition).filter(RoleDefinition.name == role_enum.value).first()
+        if not existing:
+            new_role = RoleDefinition(
+                id=uuid.uuid4(),
+                name=role_enum.value,
+                description=f"Standard system role for {role_enum.value}"
+            )
+            db.add(new_role)
+    db.commit()
+
+# Seed roles, users, and warehouses
+try:
+    with database.SessionLocal() as db:
+        seed_roles(db)
+        if not os.getenv("TESTING"):
             seed_users(db)
             seed_warehouses(db)
-    except Exception as e:
-        logger.warning(f"Seeding failed (may be benign on restart): {e}")
+except Exception as e:
+    logger.warning(f"Seeding roles, users or warehouses failed: {e}")
 
 from contextlib import asynccontextmanager
 from .websocket_manager import manager
@@ -143,6 +162,9 @@ app.include_router(auth_router, prefix="/api/auth", tags=["Auth"])
 from .saas_router import router as saas_router
 app.include_router(saas_router, tags=["SaaS Onboarding"])
 
+from .workspace_router import router as workspace_router
+app.include_router(workspace_router)
+
 # Dynamic Master Routers
 from .master_factory import create_master_router
 from . import schemas, models
@@ -177,6 +199,9 @@ app.include_router(vendor_router, prefix="/api/vendors", tags=["Vendors"])
 app.include_router(item_router, prefix="/api/items", tags=["Items"])
 app.include_router(so_router, prefix="/api/sales-orders", tags=["Internal Sales Orders"])
 app.include_router(po_router, prefix="/api/pos", tags=["Purchase Orders"])
+
+from .search_router import router as search_router
+app.include_router(search_router, prefix="/api", tags=["Global Search"])
 
 from .pr_router import router as pr_router
 app.include_router(pr_router, prefix="/api/pos/requisitions", tags=["Purchase Requisitions"])

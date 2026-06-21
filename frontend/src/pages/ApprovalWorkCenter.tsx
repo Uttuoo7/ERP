@@ -228,67 +228,108 @@ export default function ApprovalWorkCenter() {
                 <p className="text-xs mt-1">No pending approvals at this time.</p>
               </div>
             ) : (
-              <table className="w-full text-left border-collapse">
-                <thead className="bg-white sticky top-0 z-10 border-b border-slate-100 shadow-sm">
-                  <tr>
-                    <th className="py-3 px-4 w-12 text-center">
-                      <input 
-                        type="checkbox" 
-                        className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                        checked={tasks.length > 0 && selectedTaskIds.size === tasks.length}
-                        onChange={toggleSelectAll}
-                      />
-                    </th>
-                    <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Task ID / Step</th>
-                    <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Entity</th>
-                    <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Assigned Role</th>
-                    <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Created Date</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
+              <>
+                {/* Mobile Card List (Touch-Friendly Viewports) */}
+                <div className="block md:hidden divide-y divide-slate-100">
                   {tasks.map(task => {
                     const isSelected = selectedTaskIds.has(task.id);
                     const isActive = activeTask?.id === task.id;
                     const entityStr = task.entity_ref || task.instance?.entity_id || '—';
                     
                     return (
-                      <tr 
+                      <div 
                         key={task.id} 
                         onClick={() => handleRowClick(task)}
-                        className={`hover:bg-slate-50 cursor-pointer group transition-colors ${isActive ? 'bg-indigo-50/30' : ''}`}
+                        className={`p-4 flex flex-col gap-2.5 cursor-pointer active:bg-slate-50 transition-colors ${isActive ? 'bg-indigo-50/20 border-l-4 border-indigo-600 pl-3' : ''}`}
                       >
-                        <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
-                          <input 
-                            type="checkbox" 
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
-                            checked={isSelected}
-                            onChange={() => toggleSelect(task.id)}
-                          />
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className={`text-xs font-bold transition-colors ${isActive ? 'text-indigo-700' : 'text-slate-900 group-hover:text-indigo-600'}`}>{task.step.name}</div>
-                          <div className="text-[10px] font-semibold text-slate-400">ID: {task.id.slice(0, 8)}...</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-xs font-bold text-slate-700">{entityStr}</div>
-                          <div className="text-[10px] font-bold text-indigo-500 bg-indigo-50 w-fit px-1.5 rounded mt-0.5">{task.entity_type || 'WORKFLOW'}</div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5">
-                            <Shield className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-xs font-semibold text-slate-600">{task.assigned_role}</span>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5" onClick={e => e.stopPropagation()}>
+                            <input 
+                              type="checkbox" 
+                              className="w-4.5 h-4.5 rounded border-slate-350 text-indigo-600 focus:ring-indigo-600"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(task.id)}
+                            />
+                            <span className="text-xs font-black text-slate-900">{task.step.name}</span>
                           </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-xs text-slate-600 font-medium">
+                          <span className="text-[9px] font-black text-slate-400">
                             {new Date(task.created_at).toLocaleDateString()}
-                          </div>
-                        </td>
-                      </tr>
+                          </span>
+                        </div>
+                        <div className="flex justify-between items-center ml-7 text-[10px] font-semibold text-slate-500">
+                          <span>Ref: <strong className="text-slate-800">{entityStr}</strong></span>
+                          <span className="bg-indigo-50 text-indigo-600 font-extrabold px-1.5 py-0.5 rounded text-[8px] uppercase tracking-wider">
+                            {task.entity_type || 'WORKFLOW'}
+                          </span>
+                        </div>
+                      </div>
                     );
                   })}
-                </tbody>
-              </table>
+                </div>
+
+                {/* Desktop Grid View */}
+                <table className="w-full text-left border-collapse hidden md:table">
+                  <thead className="bg-white sticky top-0 z-10 border-b border-slate-100 shadow-sm">
+                    <tr>
+                      <th className="py-3 px-4 w-12 text-center">
+                        <input 
+                          type="checkbox" 
+                          className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                          checked={tasks.length > 0 && selectedTaskIds.size === tasks.length}
+                          onChange={toggleSelectAll}
+                        />
+                      </th>
+                      <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Task ID / Step</th>
+                      <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Entity</th>
+                      <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Assigned Role</th>
+                      <th className="py-3 px-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Created Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {tasks.map(task => {
+                      const isSelected = selectedTaskIds.has(task.id);
+                      const isActive = activeTask?.id === task.id;
+                      const entityStr = task.entity_ref || task.instance?.entity_id || '—';
+                      
+                      return (
+                        <tr 
+                          key={task.id} 
+                          onClick={() => handleRowClick(task)}
+                          className={`hover:bg-slate-50 cursor-pointer group transition-colors ${isActive ? 'bg-indigo-50/30' : ''}`}
+                        >
+                          <td className="py-3 px-4 text-center" onClick={e => e.stopPropagation()}>
+                            <input 
+                              type="checkbox" 
+                              className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-600"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(task.id)}
+                            />
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className={`text-xs font-bold transition-colors ${isActive ? 'text-indigo-700' : 'text-slate-900 group-hover:text-indigo-600'}`}>{task.step.name}</div>
+                            <div className="text-[10px] font-semibold text-slate-400">ID: {task.id.slice(0, 8)}...</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-xs font-bold text-slate-700">{entityStr}</div>
+                            <div className="text-[10px] font-bold text-indigo-500 bg-indigo-50 w-fit px-1.5 rounded mt-0.5">{task.entity_type || 'WORKFLOW'}</div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="flex items-center gap-1.5">
+                              <Shield className="w-3.5 h-3.5 text-slate-400" />
+                              <span className="text-xs font-semibold text-slate-600">{task.assigned_role}</span>
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-xs text-slate-600 font-medium">
+                              {new Date(task.created_at).toLocaleDateString()}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </>
             )}
           </div>
         </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useWorkspaceTabState } from '../hooks/useWorkspaceTabState';
 import { 
   FileText, ShieldCheck, Loader2, Landmark, Plus, Trash2, ArrowLeft, Layers, Calendar, Landmark as Bank, CheckCircle2, AlertTriangle
 } from 'lucide-react';
@@ -26,17 +27,17 @@ const InvoiceEntryWorkspace: React.FC = () => {
   const [grnsList, setGrnsList] = useState<any[]>([]);
 
   // Form Headers
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [vendorInvoiceNumber, setVendorInvoiceNumber] = useState("");
-  const [poId, setPoId] = useState("");
-  const [grnId, setGrnId] = useState("");
-  const [gstAmount, setGstAmount] = useState("0");
-  const [tdsDeducted, setTdsDeducted] = useState("0");
-  const [discountAmount, setDiscountAmount] = useState("0");
-  const [remarks, setRemarks] = useState("");
+  const [invoiceNumber, setInvoiceNumber] = useWorkspaceTabState("invoiceNumber", "");
+  const [vendorInvoiceNumber, setVendorInvoiceNumber] = useWorkspaceTabState("vendorInvoiceNumber", "");
+  const [poId, setPoId] = useWorkspaceTabState("poId", "");
+  const [grnId, setGrnId] = useWorkspaceTabState("grnId", "");
+  const [gstAmount, setGstAmount] = useWorkspaceTabState("gstAmount", "0");
+  const [tdsDeducted, setTdsDeducted] = useWorkspaceTabState("tdsDeducted", "0");
+  const [discountAmount, setDiscountAmount] = useWorkspaceTabState("discountAmount", "0");
+  const [remarks, setRemarks] = useWorkspaceTabState("remarks", "");
 
   // Line items
-  const [lineItems, setLineItems] = useState<any[]>([]);
+  const [lineItems, setLineItems] = useWorkspaceTabState<any[]>("lineItems", []);
 
   const fetchRefs = async () => {
     try {

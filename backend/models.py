@@ -1308,6 +1308,8 @@ class Notification(Base):
     is_read: Mapped[bool] = mapped_column(Boolean, default=False)
     priority: Mapped[str] = mapped_column(String(50), default="MEDIUM") # LOW, MEDIUM, HIGH, URGENT
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    link: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     user: Mapped["User"] = relationship()
 
@@ -2986,6 +2988,97 @@ class APSLock(Base):
     lock_acquired_at: Mapped[datetime] = mapped_column(DateTime)
     lock_expires_at: Mapped[datetime] = mapped_column(DateTime)
     is_locked: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RoleDefinition(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    description: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+
+class FeatureFlag(Base):
+    __tablename__ = "feature_flags"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
+    feature_key: Mapped[str] = mapped_column(String(100), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    rollout_percentage: Mapped[int] = mapped_column(Integer, default=100)
+    environment: Mapped[str] = mapped_column(String(50), default="Production")
+    minimum_license: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PluginState(Base):
+    __tablename__ = "plugin_states"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    plugin_key: Mapped[str] = mapped_column(String(100), index=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    license_level: Mapped[str] = mapped_column(String(50), default="standard")
+    configuration_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    installed_version: Mapped[str] = mapped_column(String(50))
+    last_updated: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_certified: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    owner_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    type: Mapped[str] = mapped_column(String(50))  # PERSONAL, SHARED, DEPARTMENT, SYSTEM
+    department_id: Mapped[Optional[uuid.UUID]] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    layout_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class WorkspacePermission(Base):
+    __tablename__ = "workspace_permissions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id", ondelete="CASCADE"), index=True)
+    role_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), index=True)
+    can_view: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_edit: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_duplicate: Mapped[bool] = mapped_column(Boolean, default=True)
+    can_delete: Mapped[bool] = mapped_column(Boolean, default=False)
+    can_publish: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True)
+    settings_schema_version: Mapped[str] = mapped_column(String(50), default="v1.0")
+    last_migrated: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    migration_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    preferences_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class PreferenceAuditLog(Base):
+    __tablename__ = "preference_audit_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    client_agent: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    tenant_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    action: Mapped[str] = mapped_column(String(100))
+    previous_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    new_value: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
 
 
 

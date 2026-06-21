@@ -3,6 +3,7 @@ import { getVendors, getItems, getWarehouses, createPO } from "../api";
 import { useNavigate } from 'react-router-dom';
 import { Save, Loader2, Truck, ShoppingCart, User, Layers, FileText } from 'lucide-react';
 import AddItemModal from '../components/AddItemModal';
+import { useWorkspaceTabState } from '../hooks/useWorkspaceTabState';
 
 import { FormLayout, FormBody, FormSplitPane } from '../components/common/form/FormLayout';
 import { FormStickyBar } from '../components/common/form/FormStickyBar';
@@ -19,11 +20,11 @@ export default function PurchaseOrderForm() {
   const [catalog, setCatalog] = useState<any[]>([]);
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [isAddItemModalOpen, setIsAddItemModalOpen] = useState(false);
-  const [vendorId, setVendorId] = useState('');
-  const [deliveryType, setDeliveryType] = useState('Warehouse');
-  const [warehouseId, setWarehouseId] = useState('');
+  const [vendorId, setVendorId] = useWorkspaceTabState('vendorId', '');
+  const [deliveryType, setDeliveryType] = useWorkspaceTabState('deliveryType', 'Warehouse');
+  const [warehouseId, setWarehouseId] = useWorkspaceTabState('warehouseId', '');
   
-  const [shipping, setShipping] = useState({
+  const [shipping, setShipping] = useWorkspaceTabState('shipping', {
     contactName: '',
     companyName: '',
     addressLine1: '',
@@ -35,7 +36,7 @@ export default function PurchaseOrderForm() {
     phone: ''
   });
 
-  const [lineItems, setLineItems] = useState([{ item_id: '', quantity_ordered: 1, unit_price: 0, description: '' }]);
+  const [lineItems, setLineItems] = useWorkspaceTabState('lineItems', [{ item_id: '', quantity_ordered: 1, unit_price: 0, description: '' }]);
   const navigate = useNavigate();
 
   const fetchCatalog = () => {

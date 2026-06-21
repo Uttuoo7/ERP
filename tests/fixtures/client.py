@@ -57,13 +57,22 @@ def client(db_session: Session) -> TestClient:
         else:
             role_enum = role_str
 
-        return models.User(
-            id=user_uuid,
-            username=f"mock_{role_str.lower()}",
-            email=f"mock_{role_str.lower()}@test.local",
-            role=role_enum,
-            is_active=True
-        )
+        user = db_session.query(models.User).filter(models.User.id == user_uuid).first()
+        if not user:
+            from datetime import datetime
+            user = models.User(
+                id=user_uuid,
+                username=f"mock_{role_str.lower()}_{user_uuid.hex[:6]}",
+                email=f"mock_{role_str.lower()}_{user_uuid.hex[:6]}@test.local",
+                hashed_password="mock_hashed_password",
+                role=role_enum,
+                is_active=True,
+                created_at=datetime.utcnow(),
+                tenant_id=models.SYSTEM_DEFAULT_TENANT_UUID
+            )
+            db_session.add(user)
+            db_session.flush()
+        return user
 
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user

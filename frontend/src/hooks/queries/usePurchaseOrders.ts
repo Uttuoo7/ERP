@@ -10,7 +10,7 @@ export const usePurchaseOrders = (params?: POQueryParams) => {
   return useQuery({
     queryKey: ['purchaseOrders', params],
     queryFn: async () => {
-      const response = await api.get('/api/po', { params });
+      const response = await api.get('/pos/', { params });
       return response.data;
     },
   });

@@ -271,6 +271,8 @@ export const getCashFlow = (params?: { start_date?: string; end_date?: string })
 export const getAPReconciliation = () => api.get('/finance/ap-reconciliation');
 export const getGRNIReconciliation = () => api.get('/finance/grni-reconciliation');
 export const getFinanceHealth = () => api.get('/finance/health');
+export const globalSearch = (q: string) => api.get('/search', { params: { q } });
+export const getEnterpriseContext = () => api.get('/auth/enterprise-context');
 
 // --- Named Proxy API Helper Exports ---
 export const get = (url: string, config?: any) => api.get(url, config);
