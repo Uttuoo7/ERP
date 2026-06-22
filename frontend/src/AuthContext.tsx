@@ -3,12 +3,31 @@ import { useAuthStore } from "./store/authStore";
 
 const AuthContext = createContext<any>(null);
 
+const decodeToken = (token: string) => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const decodeFn = typeof window !== 'undefined' ? window.atob : (str: string) => Buffer.from(str, 'base64').toString('binary');
+    const jsonPayload = decodeURIComponent(
+      decodeFn(base64)
+        .split('')
+        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const auth = useAuthStore();
   
   const login = (token: string, refreshToken: string, role: string, email: string) => {
     localStorage.setItem('refresh_token', refreshToken);
-    auth.login(token, { id: 1, username: email.split('@')[0], email, role });
+    const decoded = decodeToken(token);
+    const userId = decoded?.sub || '1';
+    auth.login(token, { id: userId, username: email.split('@')[0], email, role });
   };
   
   const logout = () => {
@@ -32,7 +51,9 @@ export const useAuth = () => {
     const auth = useAuthStore.getState();
     const login = (token: string, refreshToken: string, role: string, email: string) => {
       localStorage.setItem('refresh_token', refreshToken);
-      auth.login(token, { id: 1, username: email.split('@')[0], email, role });
+      const decoded = decodeToken(token);
+      const userId = decoded?.sub || '1';
+      auth.login(token, { id: userId, username: email.split('@')[0], email, role });
     };
     return {
       user: auth.user,

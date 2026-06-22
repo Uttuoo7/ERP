@@ -13,8 +13,10 @@ from .limiter import limiter
 @router.post("/login", response_model=schemas.Token)
 @limiter.limit("5/minute")
 def login(request: Request, login_data: schemas.LoginRequest, db: Session = Depends(database.get_db)):
+    from sqlalchemy import func
+    email_or_username = login_data.email.strip().lower()
     user = db.query(models.User).filter(
-        (models.User.email == login_data.email) | (models.User.username == login_data.email)
+        (func.lower(models.User.email) == email_or_username) | (func.lower(models.User.username) == email_or_username)
     ).first()
     if not user or not auth_utils.verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
