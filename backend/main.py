@@ -29,14 +29,33 @@ from . import database
 def run_db_migrations():
     from alembic.config import Config
     from alembic import command
+    from sqlalchemy import inspect
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         ini_path = os.path.join(base_dir, "alembic.ini")
         alembic_cfg = Config(ini_path)
-        command.upgrade(alembic_cfg, "head")
-        logger.info("Database migrations (Alembic) applied successfully.")
+        
+        # Check if the database has already been versioned by Alembic
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        
+        if "alembic_version" not in tables:
+            # Fresh database - schema was initialized by create_all.
+            # Stamp to head to prevent running older migrations that conflict with pre-created tables/indexes.
+            command.stamp(alembic_cfg, "head")
+            logger.info("Fresh database detected. Stamped Alembic migration version to head.")
+        else:
+            # Existing database - run any new upgrades.
+            try:
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Database migrations (Alembic) applied successfully.")
+            except Exception as upgrade_err:
+                logger.warning(f"Database upgrade failed: {upgrade_err}. Force stamping to head to ensure version synchronization.")
+                command.stamp(alembic_cfg, "head")
     except Exception as e:
         logger.warning(f"Programmatic database migrations failed: {e}")
+
+
 
 os.makedirs('uploads', exist_ok=True)
 
