@@ -1,7 +1,7 @@
 import logging
 from ..celery_app import celery_app
 from ..database import SessionLocal
-from . import sla_engine
+from ..services import sla_engine
 
 logger = logging.getLogger(__name__)
 
