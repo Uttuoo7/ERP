@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, Modal, Form, Input, InputNumber, DatePicker } from 'antd';
 import { Search, Eye, Send } from 'lucide-react';
+import { getVendorRFQs, getVendorRFQDetails, submitVendorRFQQuotation } from '../../api';
 
 export function VendorRFQWorkspace() {
   const [rfqs, setRfqs] = useState<any[]>([]);
@@ -15,23 +16,18 @@ export function VendorRFQWorkspace() {
   }, []);
 
   const fetchRfqs = () => {
-    fetch('http://localhost:8000/api/portal/vendor/rfqs', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setRfqs(data);
+    getVendorRFQs()
+    .then(res => {
+      setRfqs(res.data);
       setLoading(false);
     })
     .catch(console.error);
   };
 
   const handleOpenRfq = (rfqInvitation: any) => {
-    fetch(`http://localhost:8000/api/portal/vendor/rfqs/${rfqInvitation.rfq_id}`, {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-    .then(res => res.json())
-    .then(data => {
+    getVendorRFQDetails(rfqInvitation.rfq_id)
+    .then(res => {
+      const data = res.data;
       setSelectedRfq(data);
       form.setFieldsValue({
         line_items: data.line_items.map((line: any) => ({
@@ -53,14 +49,7 @@ export function VendorRFQWorkspace() {
         ...values
       };
       
-      await fetch(`http://localhost:8000/api/portal/vendor/rfqs/${selectedRfq.id}/quote`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: JSON.stringify(payload)
-      });
+      await submitVendorRFQQuotation(selectedRfq.id, payload);
       
       setIsModalOpen(false);
       fetchRfqs();

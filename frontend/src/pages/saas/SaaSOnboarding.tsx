@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Rocket, Building, User, Mail, Lock, CheckCircle, ArrowRight } from 'lucide-react';
+import { post } from '../../api';
 
 export function SaaSOnboarding() {
   const navigate = useNavigate();
@@ -21,21 +22,11 @@ export function SaaSOnboarding() {
     setError(null);
 
     try {
-      const response = await fetch('http://localhost:8000/api/saas/onboard', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to onboard tenant');
-      }
-
+      await post('/saas/onboard', formData);
       setSuccess(true);
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.response?.data?.detail || err.response?.data?.message || err.message);
     } finally {
       setLoading(false);
     }

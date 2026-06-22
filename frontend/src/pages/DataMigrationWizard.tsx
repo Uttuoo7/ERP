@@ -37,16 +37,13 @@ const DataMigrationWizard: React.FC = () => {
     formData.append('entity_type', entityType);
     
     try {
-      const response = await fetch('http://localhost:8000/api/import/upload', {
-        method: 'POST',
+      const response = await post('/import/upload', formData, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        },
-        body: formData
+          'Content-Type': 'multipart/form-data'
+        }
       });
       
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail);
+      const data = response.data;
       
       setBatchId(data.batch_id);
       setFilePath(data.file_path);

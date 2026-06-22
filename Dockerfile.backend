@@ -44,7 +44,7 @@ EXPOSE 8000
 
 # Health check to ensure API router responds
 HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
+  CMD python -c "import urllib.request, os; port = os.getenv('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/api/health')" || exit 1
 
 # Launch with Gunicorn for worker pool process management
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "4", "-b", "0.0.0.0:8000", "backend.main:app", "--timeout", "120", "--graceful-timeout", "10"]
+CMD gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:${PORT:-8000} backend.main:app --timeout 120 --graceful-timeout 10

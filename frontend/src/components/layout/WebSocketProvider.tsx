@@ -28,8 +28,22 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!user) return;
 
-    // Use absolute URL pointing to your backend
-    const wsUrl = `ws://localhost:8000/ws/${user.id}`;
+    // Deriving dynamic WebSocket URL
+    let wsUrl = '';
+    const userIdEncoded = encodeURIComponent(user.id);
+    if (import.meta.env.VITE_WS_URL) {
+      wsUrl = import.meta.env.VITE_WS_URL.replace(/\/api\/ws\/?$/, `/ws/${userIdEncoded}`).replace(/\/ws\/?$/, `/ws/${userIdEncoded}`);
+      if (!wsUrl.includes(`/ws/${userIdEncoded}`)) {
+        wsUrl = `${import.meta.env.VITE_WS_URL.replace(/\/+$/, '')}/ws/${userIdEncoded}`;
+      }
+    } else {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (apiUrl) {
+        wsUrl = `${apiUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/ws/${userIdEncoded}`;
+      } else {
+        wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/${userIdEncoded}`;
+      }
+    }
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

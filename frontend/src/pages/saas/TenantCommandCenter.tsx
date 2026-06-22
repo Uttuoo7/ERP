@@ -2,20 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { Building, Shield, Settings, Server, Globe, CheckCircle2 } from 'lucide-react';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/Card';
 import { Table } from 'antd';
+import { get } from '../../api';
 
 export function TenantCommandCenter() {
   const [tenants, setTenants] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/saas/tenants', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setTenants(data);
+    get('/saas/tenants')
+    .then(res => {
+      setTenants(res.data);
       setLoading(false);
     })
     .catch(err => {

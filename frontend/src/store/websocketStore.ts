@@ -25,9 +25,17 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
   connect: (userId: string) => {
     if (get().socket?.readyState === WebSocket.OPEN) return;
 
-    // We assume backend is hosted at same origin during prod, or explicit URL during dev
-    const wsUrl = import.meta.env.VITE_WS_URL || `ws://localhost:8000/api/ws`;
-    const socket = new WebSocket(`${wsUrl}?user_id=${userId}`);
+    // Deriving dynamic WebSocket URL
+    let wsUrl = import.meta.env.VITE_WS_URL;
+    if (!wsUrl) {
+      const apiUrl = import.meta.env.VITE_API_URL;
+      if (apiUrl) {
+        wsUrl = `${apiUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/api/ws`;
+      } else {
+        wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
+      }
+    }
+    const socket = new WebSocket(`${wsUrl}?user_id=${encodeURIComponent(userId)}`);
 
     socket.onopen = () => {
       console.log('WebSocket Connected');

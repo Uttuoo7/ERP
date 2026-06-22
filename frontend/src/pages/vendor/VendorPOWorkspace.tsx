@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, notification } from 'antd';
 import { CheckCircle, FileText, Download } from 'lucide-react';
+import { getVendorPOs, acknowledgeVendorPO } from '../../api';
 
 export function VendorPOWorkspace() {
   const [pos, setPos] = useState<any[]>([]);
@@ -12,12 +13,9 @@ export function VendorPOWorkspace() {
   }, []);
 
   const fetchPOs = () => {
-    fetch('http://localhost:8000/api/portal/vendor/pos', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setPos(data);
+    getVendorPOs()
+    .then(res => {
+      setPos(res.data);
       setLoading(false);
     })
     .catch(console.error);
@@ -25,10 +23,7 @@ export function VendorPOWorkspace() {
 
   const handleAcknowledge = async (poId: string) => {
     try {
-      await fetch(`http://localhost:8000/api/portal/vendor/pos/${poId}/acknowledge`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-      });
+      await acknowledgeVendorPO(poId);
       notification.success({ message: 'Purchase Order Acknowledged', description: 'The buyer has been notified.' });
       fetchPOs();
     } catch (e) {

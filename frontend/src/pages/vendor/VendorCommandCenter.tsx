@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
 import { Inbox, Package, FileText, TrendingUp, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { getVendorDashboard } from '../../api';
 
 export function VendorCommandCenter() {
   const [data, setData] = useState({
@@ -12,13 +13,8 @@ export function VendorCommandCenter() {
   });
 
   useEffect(() => {
-    fetch('http://localhost:8000/api/portal/vendor/dashboard', {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`
-      }
-    })
-    .then(res => res.json())
-    .then(setData)
+    getVendorDashboard()
+    .then(res => setData(res.data))
     .catch(console.error);
   }, []);
 

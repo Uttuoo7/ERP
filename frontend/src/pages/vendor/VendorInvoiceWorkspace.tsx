@@ -3,6 +3,7 @@ import { Card, CardContent } from '../../components/ui/Card';
 import { Table, Button, Tag, Upload } from 'antd';
 import { FileText } from 'lucide-react';
 import { UploadOutlined } from '@ant-design/icons';
+import api from '../../api';
 
 export function VendorInvoiceWorkspace() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -13,12 +14,9 @@ export function VendorInvoiceWorkspace() {
   }, []);
 
   const fetchInvoices = () => {
-    fetch('http://localhost:8000/api/portal/vendor/invoices', {
-      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setInvoices(data);
+    api.get('/portal/vendor/invoices')
+    .then(res => {
+      setInvoices(res.data);
       setLoading(false);
     })
     .catch(console.error);

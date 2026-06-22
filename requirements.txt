@@ -21,3 +21,4 @@ httpx
 gunicorn
 psutil
 pandas
+reportlab

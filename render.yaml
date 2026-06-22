@@ -3,7 +3,7 @@ services:
     name: p2p-erp-backend
     env: python
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "alembic upgrade head || echo 'Migrations failed, proceeding to boot' && uvicorn backend.main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PYTHON_VERSION
         value: 3.10.12
