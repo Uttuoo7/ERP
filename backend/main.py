@@ -38,16 +38,17 @@ def run_db_migrations():
     except Exception as e:
         logger.warning(f"Programmatic database migrations failed: {e}")
 
-run_db_migrations()
-
 os.makedirs('uploads', exist_ok=True)
 
-# Auto-create tables for SQLite ease (especially in testing/dev)
+# Auto-create tables for SQLite ease (especially in testing/dev/fresh DBs)
 try:
     Base.metadata.create_all(bind=engine)
     logger.info("Database schemas initialized successfully.")
 except Exception as e:
     logger.warning(f"Database schemas initialization failed: {e}")
+
+run_db_migrations()
+
 
 def seed_roles(db):
     from .models import Role, RoleDefinition
