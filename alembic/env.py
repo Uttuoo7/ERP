@@ -30,8 +30,10 @@ import backend.models  # Ensure models are loaded
 target_metadata = Base.metadata
 
 def get_url():
-    url = os.environ.get("DATABASE_URL", "sqlite:///./erp_v8.db")
-    if url.startswith("postgres://"):
+    url = os.environ.get("DATABASE_URL", "").strip()
+    if not url:
+        url = "sqlite:///./erp_v8.db"
+    elif url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
     return url
 

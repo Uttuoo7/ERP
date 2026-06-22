@@ -7,8 +7,14 @@ from dotenv import load_dotenv
 env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), '.env')
 load_dotenv(env_path)
 
+raw_db_url = os.getenv("DATABASE_URL", "").strip()
+if not raw_db_url:
+    raw_db_url = "postgresql://erp_user:erp_password@localhost:5432/p2p_erp"
+elif raw_db_url.startswith("postgres://"):
+    raw_db_url = raw_db_url.replace("postgres://", "postgresql://", 1)
+
 class DatabaseSettings(BaseModel):
-    url: str = Field(default=os.getenv("DATABASE_URL", "postgresql://erp_user:erp_password@localhost:5432/p2p_erp"))
+    url: str = Field(default=raw_db_url)
     pool_size: int = Field(default=int(os.getenv("DATABASE_POOL_SIZE", "20")))
     max_overflow: int = Field(default=int(os.getenv("DATABASE_MAX_OVERFLOW", "0")))
     pool_pre_ping: bool = Field(default=True)
