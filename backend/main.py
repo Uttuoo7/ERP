@@ -138,11 +138,18 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+CORS_ORIGINS = [origin.strip() for origin in CORS_ORIGINS if origin.strip()]
+
+# Starlette CORSMiddleware does not allow allow_origins=["*"] with allow_credentials=True.
+# We set allow_credentials=False if wildcard is specified to prevent startup crash.
+allow_credentials = True
+if "*" in CORS_ORIGINS:
+    allow_credentials = False
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_credentials=True,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
