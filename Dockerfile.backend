@@ -42,9 +42,13 @@ USER appuser
 
 EXPOSE 8000
 
-# Health check to ensure API router responds
-HEALTHCHECK --interval=10s --timeout=5s --retries=3 \
-  CMD python -c "import urllib.request, os; port = os.getenv('PORT', '8000'); urllib.request.urlopen(f'http://localhost:{port}/api/health')" || exit 1
+# Health check to ensure API router responds (or bypass for Celery worker)
+HEALTHCHECK --interval=15s --timeout=5s --retries=3 \
+  CMD python -c "import urllib.request, os, sys; \
+                 if os.getenv('IS_CELERY_WORKER') == 'true': sys.exit(0); \
+                 port = os.getenv('PORT', '8000'); \
+                 urllib.request.urlopen(f'http://localhost:{port}/api/health')" || exit 1
+
 
 # Launch with Gunicorn for worker pool process management
 CMD gunicorn -k uvicorn.workers.UvicornWorker -w 4 -b 0.0.0.0:${PORT:-8000} backend.main:app --timeout 120 --graceful-timeout 10
