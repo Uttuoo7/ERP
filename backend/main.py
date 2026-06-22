@@ -26,6 +26,20 @@ from .analytics_router import router as analytics_router
 from .document_router import router as document_router
 from . import database
 
+def run_db_migrations():
+    from alembic.config import Config
+    from alembic import command
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ini_path = os.path.join(base_dir, "alembic.ini")
+        alembic_cfg = Config(ini_path)
+        command.upgrade(alembic_cfg, "head")
+        logger.info("Database migrations (Alembic) applied successfully.")
+    except Exception as e:
+        logger.warning(f"Programmatic database migrations failed: {e}")
+
+run_db_migrations()
+
 os.makedirs('uploads', exist_ok=True)
 
 # Auto-create tables for SQLite ease (especially in testing/dev)
