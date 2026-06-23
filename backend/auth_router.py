@@ -15,9 +15,15 @@ from .limiter import limiter
 def login(request: Request, login_data: schemas.LoginRequest, db: Session = Depends(database.get_db)):
     from sqlalchemy import func
     email_or_username = login_data.email.strip().lower()
-    user = db.query(models.User).filter(
-        (func.lower(models.User.email) == email_or_username) | (func.lower(models.User.username) == email_or_username)
-    ).first()
+    
+    database.set_bypass_tenant_filter(True)
+    try:
+        user = db.query(models.User).filter(
+            (func.lower(models.User.email) == email_or_username) | (func.lower(models.User.username) == email_or_username)
+        ).first()
+    finally:
+        database.set_bypass_tenant_filter(False)
+        
     if not user or not auth_utils.verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

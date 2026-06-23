@@ -59,3 +59,6 @@ backups/
 
 # Uploads (user-generated, not source)
 uploads/
+
+# Local Netlify folder
+.netlify
