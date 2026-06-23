@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
+@theme {
+  --color-erp-primary: var(--color-primary-600);
+  --color-erp-secondary: var(--text-secondary);
+  --color-erp-border: var(--border-default);
+  --radius-erp: var(--radius-sm);
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    P2P ERP SaaS — Enterprise Design System
    Premium HSL-based design tokens with dark/light mode support.
