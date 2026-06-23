@@ -12,6 +12,13 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  if (config.url) {
+    if (config.url.startsWith('/api/')) {
+      config.url = config.url.substring(4);
+    } else if (config.url.startsWith('api/')) {
+      config.url = '/' + config.url.substring(4);
+    }
+  }
   return config;
 });
 

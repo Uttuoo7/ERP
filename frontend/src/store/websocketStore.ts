@@ -27,7 +27,11 @@ export const useWebSocketStore = create<WebSocketState>((set, get) => ({
 
     // Deriving dynamic WebSocket URL
     let wsUrl = import.meta.env.VITE_WS_URL;
-    if (!wsUrl) {
+    if (wsUrl) {
+      if (!wsUrl.endsWith('/api/ws') && !wsUrl.endsWith('/api/ws/')) {
+        wsUrl = `${wsUrl.replace(/\/+$/, '')}/api/ws`;
+      }
+    } else {
       const apiUrl = import.meta.env.VITE_API_URL;
       if (apiUrl) {
         wsUrl = `${apiUrl.replace(/^http/, 'ws').replace(/\/+$/, '')}/api/ws`;
